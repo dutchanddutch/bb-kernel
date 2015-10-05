@@ -27,3 +27,5 @@ BRANCH="am33x-v4.2"
 DISTRO=cross
 DEBARCH=armhf
 #
+
+BUILD=${BUILD}-dd2
