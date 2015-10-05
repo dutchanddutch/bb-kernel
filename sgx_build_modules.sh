@@ -276,10 +276,10 @@ installing_sgx_modules release 8.x install
 #	installing_sgx_modules release 9.x install
 
 #Disable when debugging...
-if [ -d "${DIR}/ignore/ti-sdk-pvr/pkg/" ] ; then
-	rm -rf "${DIR}/ignore/ti-sdk-pvr/pkg" || true
-fi
-if [ -d "${DIR}/ignore/ti-sdk-pvr/examples/" ] ; then
-	rm -rf "${DIR}/ignore/ti-sdk-pvr/examples" || true
-fi
+#if [ -d "${DIR}/ignore/ti-sdk-pvr/pkg/" ] ; then
+#	rm -rf "${DIR}/ignore/ti-sdk-pvr/pkg" || true
+#fi
+#if [ -d "${DIR}/ignore/ti-sdk-pvr/examples/" ] ; then
+#	rm -rf "${DIR}/ignore/ti-sdk-pvr/examples" || true
+#fi
 
