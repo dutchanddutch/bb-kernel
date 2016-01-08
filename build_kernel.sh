@@ -242,7 +242,7 @@ if [ "${FULL_REBUILD}" ] ; then
 	copy_defconfig
 fi
 if [ ! "${AUTO_BUILD}" ] ; then
-	make_menuconfig
+	( cd "${DIR}/KERNEL" && echo Opporunity to customize... && bash ) || exit
 fi
 if [  -f "${DIR}/.yakbuild" ] ; then
 	BUILD=$(echo ${kernel_tag} | sed 's/[^-]*//'|| true)
