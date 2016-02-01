@@ -1034,6 +1034,23 @@ sgx () {
 	fi
 }
 
+audio () {
+	echo "dir: audio"
+	#regenerate="enable"
+	if [ "x${regenerate}" = "xenable" ] ; then
+		start_cleanup
+	fi
+
+	#quiet some hide obvious things...
+	${git} "${DIR}/patches/audio/0001-ASoC-add-generic-TDM-codec.patch"
+	${git} "${DIR}/patches/audio/0002-ASoC-davinci_mcasp-20-bit-word-support.patch"
+
+	if [ "x${regenerate}" = "xenable" ] ; then
+		number=2
+		cleanup
+	fi
+}
+
 ###
 lts44_backports
 reverts
@@ -1046,6 +1063,7 @@ bbb_overlays
 beaglebone
 quieter
 sgx
+audio
 
 packaging () {
 	echo "dir: packaging"
