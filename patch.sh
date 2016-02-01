@@ -920,6 +920,22 @@ sgx () {
 	fi
 }
 
+audio () {
+	echo "dir: audio"
+	#regenerate="enable"
+	if [ "x${regenerate}" = "xenable" ] ; then
+		start_cleanup
+	fi
+
+	${git} "${DIR}/patches/audio/0001-ASoC-add-generic-TDM-codec.patch"
+	${git} "${DIR}/patches/audio/0002-ASoC-davinci_mcasp-20-bit-word-support.patch"
+
+	if [ "x${regenerate}" = "xenable" ] ; then
+		number=2
+		cleanup
+	fi
+}
+
 ###
 reverts
 #fixes
@@ -934,6 +950,7 @@ bbb_overlays
 beaglebone
 quieter
 #sgx
+audio
 
 packaging () {
 	echo "dir: packaging"
