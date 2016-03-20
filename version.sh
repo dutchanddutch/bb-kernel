@@ -39,3 +39,4 @@ DISTRO=cross
 DEBARCH=armhf
 #
 BUILD+=-dd2
+BUILD+=+usb
