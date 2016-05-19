@@ -222,6 +222,8 @@ fixes () {
 		start_cleanup
 	fi
 
+	${git} "${DIR}/patches/fixes/0001-spi-omap2-mcspi-leave-bus_num-allocation-to-spi-core.patch"
+
 	if [ "x${regenerate}" = "xenable" ] ; then
 		number=1
 		cleanup
@@ -938,7 +940,7 @@ audio () {
 
 ###
 reverts
-#fixes
+fixes
 ti
 #exynos
 #dts
