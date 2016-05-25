@@ -223,9 +223,10 @@ fixes () {
 	fi
 
 	${git} "${DIR}/patches/fixes/0001-spi-omap2-mcspi-leave-bus_num-allocation-to-spi-core.patch"
+	${git} "${DIR}/patches/fixes/0002-dmaengine-edma-Re-evaluate-errors-when-ccerr-is-trig.patch"
 
 	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
+		number=2
 		cleanup
 	fi
 }
