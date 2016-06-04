@@ -22,6 +22,8 @@
 
 # Split out, so build_kernel.sh and build_deb.sh can share..
 
+shopt -s nullglob
+
 . ${DIR}/version.sh
 if [ -f ${DIR}/system.sh ] ; then
 	. ${DIR}/system.sh
@@ -68,6 +70,28 @@ cleanup () {
 		fi
 	fi
 	exit 2
+}
+
+dir () {
+	wdir="$1"
+	if [ -d "${DIR}/patches/$wdir" ]; then
+		echo "dir: $wdir"
+
+		if [ "x${regenerate}" = "xenable" ] ; then
+			start_cleanup
+		fi
+
+		number=
+		for p in "${DIR}/patches/$wdir/"*.patch; do
+			${git} "$p"
+			number=$(( $number + 1 ))
+		done
+
+		if [ "x${regenerate}" = "xenable" ] ; then
+			cleanup
+		fi
+	fi
+	unset wdir
 }
 
 cherrypick () {
@@ -190,15 +214,9 @@ rt () {
 	${git} "${DIR}/patches/rt/0001-merge-CONFIG_PREEMPT_RT-Patch-Set.patch"
 }
 
-local_patch () {
-	echo "dir: dir"
-	${git} "${DIR}/patches/dir/0001-patch.patch"
-}
-
 #external_git
 aufs4
 #rt
-#local_patch
 
 pre_backports () {
 	echo "dir: backports/${subsystem}"
@@ -276,19 +294,6 @@ reverts () {
 	fi
 
 	${git} "${DIR}/patches/reverts/0001-Revert-spi-spidev-Warn-loudly-if-instantiated-from-D.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
-		cleanup
-	fi
-}
-
-fixes () {
-	echo "dir: fixes"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
 
 	if [ "x${regenerate}" = "xenable" ] ; then
 		number=1
@@ -826,7 +831,7 @@ more_fixes () {
 ###
 backports
 reverts
-#fixes
+dir 'fixes'
 ti
 pru_uio
 pru_rpmsg
@@ -834,6 +839,7 @@ bbb_overlays
 beaglebone
 quieter
 more_fixes
+dir 'local'
 
 packaging () {
 	echo "dir: packaging"
