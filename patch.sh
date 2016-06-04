@@ -785,6 +785,7 @@ beaglebone () {
 
 dir 'reverts'
 dir 'fixes'
+dir 'fixes/musb'
 dir 'ti/iodelay'
 dir 'ti/dtbs'
 #exynos

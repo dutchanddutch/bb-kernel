@@ -1,0 +1,105 @@
+From 9dc0369a8481cf0b47bd9e95e9a09c3d0fd8c4ff Mon Sep 17 00:00:00 2001
+From: Tony Lindgren <tony@atomide.com>
+Date: Tue, 31 May 2016 10:05:14 -0500
+Subject: [PATCH 11/24] usb: musb: Use delayed for musb_gadget_pullup
+
+We have MUSB setting pm_runtime_irq_safe with the following
+commits:
+
+30a70b026b4c ("usb: musb: fix obex in g_nokia.ko causing kernel panic")
+3e43a0725637 ("usb: musb: core: add pm_runtime_irq_safe()")
+
+Let's fix things to use delayed work so we can remove the
+pm_runtime_irq_safe.
+
+Note that we may want to set this up in a generic way in the
+gadget framework eventually.
+
+Signed-off-by: Tony Lindgren <tony@atomide.com>
+Signed-off-by: Bin Liu <b-liu@ti.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/musb/musb_core.h   |  1 +
+ drivers/usb/musb/musb_gadget.c | 24 ++++++++++++++++++------
+ 2 files changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/musb/musb_core.h b/drivers/usb/musb/musb_core.h
+index b6afe9e..2947384 100644
+--- a/drivers/usb/musb/musb_core.h
++++ b/drivers/usb/musb/musb_core.h
+@@ -312,6 +312,7 @@ struct musb {
+ 	struct work_struct	irq_work;
+ 	struct delayed_work	deassert_reset_work;
+ 	struct delayed_work	finish_resume_work;
++	struct delayed_work	gadget_work;
+ 	u16			hwvers;
+ 
+ 	u16			intrrxe;
+diff --git a/drivers/usb/musb/musb_gadget.c b/drivers/usb/musb/musb_gadget.c
+index 7ecc893..af2a3a7 100644
+--- a/drivers/usb/musb/musb_gadget.c
++++ b/drivers/usb/musb/musb_gadget.c
+@@ -1656,6 +1656,20 @@ static int musb_gadget_vbus_draw(struct usb_gadget *gadget, unsigned mA)
+ 	return usb_phy_set_power(musb->xceiv, mA);
+ }
+ 
++static void musb_gadget_work(struct work_struct *work)
++{
++	struct musb *musb;
++	unsigned long flags;
++
++	musb = container_of(work, struct musb, gadget_work.work);
++	pm_runtime_get_sync(musb->controller);
++	spin_lock_irqsave(&musb->lock, flags);
++	musb_pullup(musb, musb->softconnect);
++	spin_unlock_irqrestore(&musb->lock, flags);
++	pm_runtime_mark_last_busy(musb->controller);
++	pm_runtime_put_autosuspend(musb->controller);
++}
++
+ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
+ {
+ 	struct musb	*musb = gadget_to_musb(gadget);
+@@ -1663,20 +1677,16 @@ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
+ 
+ 	is_on = !!is_on;
+ 
+-	pm_runtime_get_sync(musb->controller);
+-
+ 	/* NOTE: this assumes we are sensing vbus; we'd rather
+ 	 * not pullup unless the B-session is active.
+ 	 */
+ 	spin_lock_irqsave(&musb->lock, flags);
+ 	if (is_on != musb->softconnect) {
+ 		musb->softconnect = is_on;
+-		musb_pullup(musb, is_on);
++		schedule_delayed_work(&musb->gadget_work, 0);
+ 	}
+ 	spin_unlock_irqrestore(&musb->lock, flags);
+ 
+-	pm_runtime_put(musb->controller);
+-
+ 	return 0;
+ }
+ 
+@@ -1845,7 +1855,7 @@ int musb_gadget_setup(struct musb *musb)
+ #elif IS_ENABLED(CONFIG_USB_MUSB_GADGET)
+ 	musb->g.is_otg = 0;
+ #endif
+-
++	INIT_DELAYED_WORK(&musb->gadget_work, musb_gadget_work);
+ 	musb_g_init_endpoints(musb);
+ 
+ 	musb->is_active = 0;
+@@ -1866,6 +1876,8 @@ void musb_gadget_cleanup(struct musb *musb)
+ {
+ 	if (musb->port_mode == MUSB_PORT_MODE_HOST)
+ 		return;
++
++	cancel_delayed_work_sync(&musb->gadget_work);
+ 	usb_del_gadget_udc(&musb->g);
+ }
+ 
+-- 
+2.8.1
+

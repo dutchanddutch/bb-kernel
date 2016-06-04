@@ -1,0 +1,57 @@
+From 4159dc42fa3b971fc56326c7fc7c9e3088e617a9 Mon Sep 17 00:00:00 2001
+From: Tony Lindgren <tony@atomide.com>
+Date: Tue, 31 May 2016 10:05:18 -0500
+Subject: [PATCH 15/24] usb: musb: Don't set d+ high before enable for 2430
+ glue layer
+
+At least 2430 glue layer pulls d+ high on start up even if there are
+no gadgets configured. This is bad at least for anything using a separate
+battery charger chip as it can confuse the charger detection.
+
+Let's fix the issue by removing the bogus glue layer code tinkering
+with the SESSION bit. As pointed out Bin Liu <b-liu@ti.com> and
+Sergei Shtylyov <sergei.shtylyov@cogentembedded.com>, the SESSION
+bit just starts host mode if ID pin is grounded, and starts the
+srp is ID pin is floating. So without the ID pin changing, it's
+unable to force musb mode to anything. And just for starting a
+host mode, things work fine without this code.
+
+Signed-off-by: Tony Lindgren <tony@atomide.com>
+Signed-off-by: Bin Liu <b-liu@ti.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/musb/omap2430.c | 11 -----------
+ 1 file changed, 11 deletions(-)
+
+diff --git a/drivers/usb/musb/omap2430.c b/drivers/usb/musb/omap2430.c
+index 5365394..d312d42 100644
+--- a/drivers/usb/musb/omap2430.c
++++ b/drivers/usb/musb/omap2430.c
+@@ -122,16 +122,6 @@ static void omap2430_musb_set_vbus(struct musb *musb, int is_on)
+ 		musb_readb(musb->mregs, MUSB_DEVCTL));
+ }
+ 
+-static int omap2430_musb_set_mode(struct musb *musb, u8 musb_mode)
+-{
+-	u8	devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
+-
+-	devctl |= MUSB_DEVCTL_SESSION;
+-	musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
+-
+-	return 0;
+-}
+-
+ static inline void omap2430_low_level_exit(struct musb *musb)
+ {
+ 	u32 l;
+@@ -472,7 +462,6 @@ static const struct musb_platform_ops omap2430_ops = {
+ 	.init		= omap2430_musb_init,
+ 	.exit		= omap2430_musb_exit,
+ 
+-	.set_mode	= omap2430_musb_set_mode,
+ 	.set_vbus	= omap2430_musb_set_vbus,
+ 
+ 	.enable		= omap2430_musb_enable,
+-- 
+2.8.1
+

@@ -1,0 +1,43 @@
+From fc0154be3d96b30a7dc5b3bdb0e627d9cf1e9587 Mon Sep 17 00:00:00 2001
+From: Tony Lindgren <tony@atomide.com>
+Date: Tue, 31 May 2016 10:05:22 -0500
+Subject: [PATCH 19/24] usb: musb: Use normal module_init for 2430 glue
+
+There's no longer any need for custom initcall level for
+musb.
+
+Signed-off-by: Tony Lindgren <tony@atomide.com>
+Signed-off-by: Bin Liu <b-liu@ti.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/musb/omap2430.c | 14 ++------------
+ 1 file changed, 2 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/usb/musb/omap2430.c b/drivers/usb/musb/omap2430.c
+index 22f15b0..0b4cec9 100644
+--- a/drivers/usb/musb/omap2430.c
++++ b/drivers/usb/musb/omap2430.c
+@@ -669,18 +669,8 @@ static struct platform_driver omap2430_driver = {
+ 	},
+ };
+ 
++module_platform_driver(omap2430_driver);
++
+ MODULE_DESCRIPTION("OMAP2PLUS MUSB Glue Layer");
+ MODULE_AUTHOR("Felipe Balbi <balbi@ti.com>");
+ MODULE_LICENSE("GPL v2");
+-
+-static int __init omap2430_init(void)
+-{
+-	return platform_driver_register(&omap2430_driver);
+-}
+-subsys_initcall(omap2430_init);
+-
+-static void __exit omap2430_exit(void)
+-{
+-	platform_driver_unregister(&omap2430_driver);
+-}
+-module_exit(omap2430_exit);
+-- 
+2.8.1
+

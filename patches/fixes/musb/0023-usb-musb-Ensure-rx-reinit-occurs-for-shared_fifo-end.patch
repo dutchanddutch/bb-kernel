@@ -1,0 +1,48 @@
+From 3f9813f5739b0b9a91794bc82cfa3874d5f3ccb1 Mon Sep 17 00:00:00 2001
+From: Andrew Goodbody <andrew.goodbody@cambrionix.com>
+Date: Tue, 31 May 2016 10:05:26 -0500
+Subject: [PATCH 23/24] usb: musb: Ensure rx reinit occurs for shared_fifo
+ endpoints
+
+shared_fifo endpoints would only get a previous tx state cleared
+out, the rx state was only cleared for non shared_fifo endpoints
+Change this so that the rx state is cleared for all endpoints.
+This addresses an issue that resulted in rx packets being dropped
+silently.
+
+Signed-off-by: Andrew Goodbody <andrew.goodbody@cambrionix.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Bin Liu <b-liu@ti.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/musb/musb_host.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/usb/musb/musb_host.c b/drivers/usb/musb/musb_host.c
+index 160e704..ee0e880 100644
+--- a/drivers/usb/musb/musb_host.c
++++ b/drivers/usb/musb/musb_host.c
+@@ -600,14 +600,13 @@ musb_rx_reinit(struct musb *musb, struct musb_qh *qh, u8 epnum)
+ 		musb_writew(ep->regs, MUSB_TXCSR, 0);
+ 
+ 	/* scrub all previous state, clearing toggle */
+-	} else {
+-		csr = musb_readw(ep->regs, MUSB_RXCSR);
+-		if (csr & MUSB_RXCSR_RXPKTRDY)
+-			WARNING("rx%d, packet/%d ready?\n", ep->epnum,
+-				musb_readw(ep->regs, MUSB_RXCOUNT));
+-
+-		musb_h_flush_rxfifo(ep, MUSB_RXCSR_CLRDATATOG);
+ 	}
++	csr = musb_readw(ep->regs, MUSB_RXCSR);
++	if (csr & MUSB_RXCSR_RXPKTRDY)
++		WARNING("rx%d, packet/%d ready?\n", ep->epnum,
++			musb_readw(ep->regs, MUSB_RXCOUNT));
++
++	musb_h_flush_rxfifo(ep, MUSB_RXCSR_CLRDATATOG);
+ 
+ 	/* target addr and (for multipoint) hub addr/port */
+ 	if (musb->is_multipoint) {
+-- 
+2.8.1
+
