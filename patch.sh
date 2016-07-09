@@ -286,21 +286,6 @@ backports () {
 	patch_backports
 }
 
-reverts () {
-	echo "dir: reverts"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	${git} "${DIR}/patches/reverts/0001-Revert-spi-spidev-Warn-loudly-if-instantiated-from-D.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
-		cleanup
-	fi
-}
-
 ti () {
 	is_mainline="enable"
 	if [ "x${is_mainline}" = "xenable" ] ; then
@@ -356,39 +341,6 @@ ti () {
 
 	if [ "x${regenerate}" = "xenable" ] ; then
 		number=1
-		cleanup
-	fi
-}
-
-pru_uio () {
-	echo "dir: pru_uio"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	${git} "${DIR}/patches/pru_uio/0001-Making-the-uio-pruss-driver-work.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
-		cleanup
-	fi
-}
-
-pru_rpmsg () {
-	echo "dir: pru_rpmsg"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	#${git} "${DIR}/patches/pru_rpmsg/0001-Fix-remoteproc-to-work-with-the-PRU-GNU-Binutils-por.patch"
-#http://git.ti.com/gitweb/?p=ti-linux-kernel/ti-linux-kernel.git;a=commit;h=c2e6cfbcf2aafc77e9c7c8f1a3d45b062bd21876
-#	${git} "${DIR}/patches/pru_rpmsg/0002-Add-rpmsg_pru-support.patch"
-	${git} "${DIR}/patches/pru_rpmsg/0003-ARM-samples-seccomp-no-m32.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=3
 		cleanup
 	fi
 }
@@ -797,48 +749,17 @@ beaglebone () {
 	fi
 }
 
-quieter () {
-	echo "dir: quieter"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	#quiet some hide obvious things...
-	${git} "${DIR}/patches/quieter/0001-quiet-8250_omap.c-use-pr_info-over-pr_err.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
-		cleanup
-	fi
-}
-
-more_fixes () {
-	echo "dir: more_fixes"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	${git} "${DIR}/patches/more_fixes/0001-slab-gcc5-fixes.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		number=1
-		cleanup
-	fi
-}
-
 ###
 backports
-reverts
+dir 'reverts'
 dir 'fixes'
 ti
-pru_uio
-pru_rpmsg
+dir 'pru_uio'
+dir 'pru_rpmsg'
 bbb_overlays
 beaglebone
-quieter
-more_fixes
+dir 'quieter'
+dir 'more_fixes'
 dir 'local'
 
 packaging () {
