@@ -862,6 +862,7 @@ soc
 beaglebone
 quieter
 more_fixes
+dir 'gpio'
 dir 'local'
 
 packaging () {
