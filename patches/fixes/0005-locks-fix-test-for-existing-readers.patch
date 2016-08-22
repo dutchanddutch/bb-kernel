@@ -1,0 +1,87 @@
+From 78ffeeea4575ec01bcf6cb6dc34d8bbc54c6c4b8 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Sat, 20 Aug 2016 11:20:42 +0200
+Subject: [PATCH] locks: fix test for existing readers
+
+The old test causes serious false positives:  any inotify watch or even
+the mere existence of a hard link suffices to make write leases fail.
+
+TODO: check if moving the inc of readcount requires patches to IMA
+---
+ fs/locks.c         | 4 ++--
+ fs/open.c          | 7 +++++--
+ include/linux/fs.h | 4 ++--
+ 3 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/fs/locks.c b/fs/locks.c
+index ee1b15f..371bfe6 100644
+--- a/fs/locks.c
++++ b/fs/locks.c
+@@ -1616,8 +1616,8 @@ check_conflicting_open(const struct dentry *dentry, const long arg, int flags)
+ 	if ((arg == F_RDLCK) && (atomic_read(&inode->i_writecount) > 0))
+ 		return -EAGAIN;
+ 
+-	if ((arg == F_WRLCK) && ((d_count(dentry) > 1) ||
+-	    (atomic_read(&inode->i_count) > 1)))
++	if ((arg == F_WRLCK) && ((atomic_read(&inode->i_writecount) > 1) ||
++	                         (atomic_read(&inode->i_readcount) > 0)))
+ 		ret = -EAGAIN;
+ 
+ 	return ret;
+diff --git a/fs/open.c b/fs/open.c
+index d25b9bd..85a3da5 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -714,6 +714,9 @@ static int do_dentry_open(struct file *f,
+ 		f->f_mode |= FMODE_WRITER;
+ 	}
+ 
++	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
++		i_readcount_inc(inode);
++
+ 	/* POSIX.1-2008/SUSv4 Section XSI 2.9.7 */
+ 	if (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode))
+ 		f->f_mode |= FMODE_ATOMIC_POS;
+@@ -739,8 +742,6 @@ static int do_dentry_open(struct file *f,
+ 		if (error)
+ 			goto cleanup_all;
+ 	}
+-	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
+-		i_readcount_inc(inode);
+ 	if ((f->f_mode & FMODE_READ) &&
+ 	     likely(f->f_op->read || f->f_op->read_iter))
+ 		f->f_mode |= FMODE_CAN_READ;
+@@ -756,6 +757,8 @@ static int do_dentry_open(struct file *f,
+ 
+ cleanup_all:
+ 	fops_put(f->f_op);
++	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
++		i_readcount_dec(inode);
+ 	if (f->f_mode & FMODE_WRITER) {
+ 		put_write_access(inode);
+ 		__mnt_drop_write(f->f_path.mnt);
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index b689a48..4c4e5d0 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -673,7 +673,7 @@ struct inode {
+ 	atomic_t		i_count;
+ 	atomic_t		i_dio_count;
+ 	atomic_t		i_writecount;
+-#ifdef CONFIG_IMA
++#if defined(CONFIG_IMA) || defined(CONFIG_FILE_LOCKING)
+ 	atomic_t		i_readcount; /* struct files open RO */
+ #endif
+ 	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
+@@ -2615,7 +2615,7 @@ static inline bool inode_is_open_for_write(const struct inode *inode)
+ 	return atomic_read(&inode->i_writecount) > 0;
+ }
+ 
+-#ifdef CONFIG_IMA
++#if defined(CONFIG_IMA) || defined(CONFIG_FILE_LOCKING)
+ static inline void i_readcount_dec(struct inode *inode)
+ {
+ 	BUG_ON(!atomic_read(&inode->i_readcount));
+-- 
+2.8.1
+
