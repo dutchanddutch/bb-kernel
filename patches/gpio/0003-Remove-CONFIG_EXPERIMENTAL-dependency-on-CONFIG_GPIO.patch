@@ -7,7 +7,7 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Signed-off-by: Tobias MÃ¼ller <Tobias_Mueller@twam.info>
+Signed-off-by: Tobias Müller <Tobias_Mueller@twam.info>
 ---
  drivers/gpio/Kconfig | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
