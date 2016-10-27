@@ -544,6 +544,8 @@ drivers
 soc
 beaglebone
 
+dir 'local'
+
 packaging () {
 	echo "dir: packaging"
 	#regenerate="enable"
