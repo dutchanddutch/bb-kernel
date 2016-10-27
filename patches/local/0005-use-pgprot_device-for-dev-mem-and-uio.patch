@@ -1,0 +1,42 @@
+From d5993d5762bd1478298902c843ce34815bf0e6c6 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 19 Oct 2016 11:56:58 +0200
+Subject: [PATCH 5/6] use pgprot_device for /dev/mem and uio
+
+---
+ arch/arm/mm/mmu.c | 2 +-
+ drivers/uio/uio.c | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mm/mmu.c b/arch/arm/mm/mmu.c
+index 30fe03f95c85..7bdf421b2d4d 100644
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -702,7 +702,7 @@ pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
+ 			      unsigned long size, pgprot_t vma_prot)
+ {
+ 	if (!pfn_valid(pfn))
+-		return pgprot_noncached(vma_prot);
++		return pgprot_device(vma_prot);
+ 	else if (file->f_flags & O_SYNC)
+ 		return pgprot_writecombine(vma_prot);
+ 	return vma_prot;
+diff --git a/drivers/uio/uio.c b/drivers/uio/uio.c
+index fba021f5736a..fb6b0b378bd7 100644
+--- a/drivers/uio/uio.c
++++ b/drivers/uio/uio.c
+@@ -656,7 +656,11 @@ static int uio_mmap_physical(struct vm_area_struct *vma)
+ 		return -EINVAL;
+ 
+ 	vma->vm_ops = &uio_physical_vm_ops;
++#ifdef pgprot_device
++	vma->vm_page_prot = pgprot_device(vma->vm_page_prot);
++#else
+ 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++#endif
+ 
+ 	/*
+ 	 * We cannot use the vm_iomap_memory() helper here,
+-- 
+2.9.3
+

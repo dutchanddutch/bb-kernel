@@ -1,0 +1,29 @@
+From 07fb580da2cb69a28e879fb757a044f5b7a645f9 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 13 Jul 2016 00:25:36 +0200
+Subject: [PATCH 4/6] ARM: introduce pgprot_device()
+
+strongly-ordered memory is usually expensive overkill.
+
+Signed-off-by: Matthijs van Duin <matthijsvanduin@gmail.com>
+---
+ arch/arm/include/asm/pgtable.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm/include/asm/pgtable.h b/arch/arm/include/asm/pgtable.h
+index a8d656d9aec7..c30035f79f27 100644
+--- a/arch/arm/include/asm/pgtable.h
++++ b/arch/arm/include/asm/pgtable.h
+@@ -121,6 +121,9 @@ extern pgprot_t		pgprot_s2_device;
+ #define pgprot_writecombine(prot) \
+ 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_BUFFERABLE)
+ 
++#define pgprot_device(prot) \
++	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_DEV_SHARED | L_PTE_SHARED)
++
+ #define pgprot_stronglyordered(prot) \
+ 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_UNCACHED)
+ 
+-- 
+2.9.3
+
