@@ -367,6 +367,7 @@ drivers () {
 	#[PATCH V5 00/10] PM / OPP: Multiple regulator support
 	dir 'drivers/pm_opp'
 
+	dir 'drivers/sound'
 	dir 'drivers/spi'
 	dir 'drivers/tsl2550'
 	dir 'drivers/tps65217'
