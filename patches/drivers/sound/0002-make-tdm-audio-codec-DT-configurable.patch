@@ -1,0 +1,233 @@
+From aee78914c9403a79fcfd7f36fffbced7423e05e1 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 23 Dec 2016 01:00:23 +0100
+Subject: [PATCH] make tdm-audio codec DT-configurable
+
+---
+ sound/core/pcm_native.c |   1 +
+ sound/soc/codecs/tdm.c  | 184 ++++++++++++++++++++++++++++++++++--------------
+ 2 files changed, 131 insertions(+), 54 deletions(-)
+
+diff --git a/sound/core/pcm_native.c b/sound/core/pcm_native.c
+index 9d33c1e85c79..00c38fb42cd5 100644
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -1992,6 +1992,7 @@ const struct snd_pcm_hw_constraint_list snd_pcm_known_rates = {
+ 	.count = ARRAY_SIZE(rates),
+ 	.list = rates,
+ };
++EXPORT_SYMBOL_GPL(snd_pcm_known_rates);
+ 
+ static int snd_pcm_hw_rule_rate(struct snd_pcm_hw_params *params,
+ 				struct snd_pcm_hw_rule *rule)
+diff --git a/sound/soc/codecs/tdm.c b/sound/soc/codecs/tdm.c
+index ed140ea1dc73..520c9dc75415 100644
+--- a/sound/soc/codecs/tdm.c
++++ b/sound/soc/codecs/tdm.c
+@@ -7,8 +7,6 @@
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 as
+  * published by the Free Software Foundation.
+- *
+- * TODO Allow customization via device tree.
+  */
+ 
+ #include <linux/module.h>
+@@ -21,64 +19,145 @@
+ 
+ #define DRV_NAME "tdm-audio"
+ 
+-/* As far as I can tell the LE/3LE/BE/3BE suffix merely indicates how the data
+- * was represented in memory, so why would the codec care?  On the other hand,
+- * how do you indicate the bit-endianness on wire?  */
++/* As far as I can tell this merely indicates how the data was represented in
++ * memory, rather than the on-wire format.
++ *
++ * Why would the codec give a shit about this?
++ */
+ 
+-#define TDM_FORMATS	(SNDRV_PCM_FMTBIT_S8 | \
+-			SNDRV_PCM_FMTBIT_U8 | \
+-			SNDRV_PCM_FMTBIT_S16_LE | \
+-			SNDRV_PCM_FMTBIT_U16_LE | \
+-			SNDRV_PCM_FMTBIT_S20_3LE | \
+-			SNDRV_PCM_FMTBIT_U20_3LE | \
+-			SNDRV_PCM_FMTBIT_S24_3LE | \
+-			SNDRV_PCM_FMTBIT_U24_3LE | \
+-			SNDRV_PCM_FMTBIT_S24_LE | \
+-			SNDRV_PCM_FMTBIT_U24_LE | \
+-			SNDRV_PCM_FMTBIT_S32_LE | \
+-			SNDRV_PCM_FMTBIT_U32_LE)
++#define TDM_FORMATS    (SNDRV_PCM_FMTBIT_S8 | \
++                       SNDRV_PCM_FMTBIT_S16_LE | \
++                       SNDRV_PCM_FMTBIT_S20_3LE | \
++                       SNDRV_PCM_FMTBIT_S24_3LE | \
++                       SNDRV_PCM_FMTBIT_S24_LE | \
++                       SNDRV_PCM_FMTBIT_S32_LE)
+ 
+-static const struct snd_soc_dapm_widget tdm_audio_widgets[] = {
+-	SND_SOC_DAPM_OUTPUT("Sink"),
+-	SND_SOC_DAPM_INPUT("Source"),
++struct tdm_audio_driver {
++	struct snd_soc_codec_driver codec_drv;
++	struct snd_soc_dapm_widget widgets[2];
++	struct snd_soc_dapm_route routes[2];
++	struct snd_soc_dai_driver dai_drv;
+ };
+ 
+-static const struct snd_soc_dapm_route tdm_audio_routes[] = {
+-	{ "Sink", NULL, "Playback" },
+-	{ "Capture", NULL, "Source" },
+-};
++static bool tdm_lookup_rate(u32 *index, u32 rate)
++{
++	unsigned int i;
+ 
+-static struct snd_soc_codec_driver soc_codec_tdm_audio = {
+-	.component_driver = {
+-		.dapm_widgets		= tdm_audio_widgets,
+-		.num_dapm_widgets	= ARRAY_SIZE(tdm_audio_widgets),
+-		.dapm_routes		= tdm_audio_routes,
+-		.num_dapm_routes	= ARRAY_SIZE(tdm_audio_routes),
+-	},
+-};
++	if (rate <= 31) {
++		*index = rate;
++		return true;
++	}
+ 
+-static struct snd_soc_dai_driver tdm_audio_dai = {
+-	.name		= "tdm_audio",
+-	.playback 	= {
+-		.stream_name	= "Playback",
+-		.channels_min	= 1,
+-		.channels_max	= 16,
+-		.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+-		.formats	= TDM_FORMATS,
+-	},
+-	.capture 	= {
+-		.stream_name	= "Capture",
+-		.channels_min	= 1,
+-		.channels_max	= 16,
+-		.rates		= SNDRV_PCM_RATE_CONTINUOUS,
+-		.formats	= TDM_FORMATS,
+-	},
+-};
++	for (i = 0; i < snd_pcm_known_rates.count; i++) {
++		if (snd_pcm_known_rates.list[i] == rate) {
++			*index = i;
++			return true;
++		}
++	}
++
++	return false;
++}
++
++static int tdm_audio_parse_stream(struct device *dev,
++		struct snd_soc_pcm_stream *stream, struct device_node *np)
++{
++	int res;
++	struct property *prop;
++	const __be32 *p;
++	u32 u;
++
++	of_property_read_string(np, "stream-name", &stream->stream_name);
++
++	res = of_property_read_variable_u32_array(np, "channels",
++			&stream->channels_min, 1, 2);
++	if (res < 0) {
++		dev_err(dev, "channels property missing or invalid\n");
++		return res;
++	}
++	if (res < 2)
++		stream->channels_max = stream->channels_min;
++
++	of_property_for_each_u32(np, "rates", prop, p, u) {
++		if (tdm_lookup_rate(&u, u))
++			stream->rates |= 1ULL << u;
++		else
++			dev_warn(dev, "skipping invalid rate: %u\n", u);
++	}
++	if (!stream->rates) {
++		dev_err(dev, "no rates defined\n");
++		return -EINVAL;
++	}
++
++	// Note: this is useless for setting slot width.  You can use
++	// dai-tdm-slot-width on the dai instance for that instead.
++	stream->formats = TDM_FORMATS;
++
++	return 0;
++}
+ 
+ static int tdm_audio_probe(struct platform_device *pdev)
+ {
+-	return snd_soc_register_codec(&pdev->dev, &soc_codec_tdm_audio,
+-			&tdm_audio_dai, 1);
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	struct device_node *child;
++	struct tdm_audio_driver *tdm;
++	struct snd_soc_codec_driver *codec_drv;
++	struct snd_soc_component_driver *c_drv;
++	struct snd_soc_dai_driver *dai_drv;
++	const char *name;
++	int err = 0;
++
++	tdm = devm_kzalloc(dev, sizeof(*tdm), GFP_KERNEL);
++	if (tdm == NULL)
++		return -ENOMEM;
++
++	codec_drv = &tdm->codec_drv;
++	c_drv = &codec_drv->component_driver;
++	c_drv->dapm_widgets = tdm->widgets;
++	c_drv->dapm_routes = tdm->routes;
++
++	dai_drv = &tdm->dai_drv;
++	dai_drv->name = dev_name(dev);
++	of_property_read_string(np, "dai-name", &dai_drv->name);
++
++	dai_drv->symmetric_rates
++		= of_property_read_bool(np, "symmetric-rates");
++	dai_drv->symmetric_channels
++		= of_property_read_bool(np, "symmetric-channels");
++	dai_drv->symmetric_samplebits
++		= of_property_read_bool(np, "symmetric-samplebits");
++
++	child = of_get_child_by_name(np, "playback");
++	if (child) {
++		dai_drv->playback.stream_name = "Playback";
++		err = tdm_audio_parse_stream(dev, &dai_drv->playback, child);
++		if (err)
++			return err;
++		name = "Audio Out";
++		of_property_read_string(child, "output-widget-name", &name);
++		tdm->widgets[ c_drv->num_dapm_widgets++ ] =
++			(struct snd_soc_dapm_widget)SND_SOC_DAPM_OUTPUT(name);
++		tdm->routes[ c_drv->num_dapm_routes++ ] =
++			(struct snd_soc_dapm_route){
++				name, NULL, dai_drv->playback.stream_name };
++	}
++
++	child = of_get_child_by_name(np, "capture");
++	if (child) {
++		dai_drv->capture.stream_name = "Capture";
++		err = tdm_audio_parse_stream(dev, &dai_drv->capture, child);
++		if (err)
++			return err;
++		name = "Audio In";
++		of_property_read_string(child, "input-widget-name", &name);
++		tdm->widgets[ c_drv->num_dapm_widgets++ ] =
++			(struct snd_soc_dapm_widget)SND_SOC_DAPM_INPUT(name);
++		tdm->routes[ c_drv->num_dapm_routes++ ] =
++			(struct snd_soc_dapm_route){
++				dai_drv->capture.stream_name, NULL, name };
++	}
++
++	return snd_soc_register_codec(dev, codec_drv, dai_drv, 1);
+ }
+ 
+ static int tdm_audio_remove(struct platform_device *pdev)
+-- 
+2.11.0
+
