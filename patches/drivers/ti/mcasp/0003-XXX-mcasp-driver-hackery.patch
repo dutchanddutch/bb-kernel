@@ -1,0 +1,358 @@
+From bbc952cfe800106f20c735586d15df1f556dd319 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 20 Dec 2016 08:02:43 +0100
+Subject: [PATCH] XXX mcasp driver hackery
+
+---
+ sound/soc/davinci/davinci-mcasp.c | 139 ++++++++++++++++++++++++++------------
+
+diff --git a/sound/soc/davinci/davinci-mcasp.c b/sound/soc/davinci/davinci-mcasp.c
+index 35e441cffa7d..4426ab4343a1 100644
+--- a/sound/soc/davinci/davinci-mcasp.c
++++ b/sound/soc/davinci/davinci-mcasp.c
+@@ -71,6 +71,24 @@ struct davinci_mcasp_ruledata {
+ 	int serializers;
+ };
+ 
++#define HACK_KEEP_RX_CLK	RXCLKRST
++#define HACK_KEEP_RX_HCLK	RXHCLKRST
++#define HACK_KEEP_RX_FS		RXFSRST
++#define HACK_KEEP_TX_CLK	TXCLKRST
++#define HACK_KEEP_TX_HCLK	TXHCLKRST
++#define HACK_KEEP_TX_FS		TXFSRST
++#define HACK_RX_ASYNC_SLAVE	BIT(31)
++
++static const struct { const char *prop; u32 value; } hacks[] = {
++	{ "keep-rx-clk",	HACK_KEEP_RX_CLK },
++	{ "keep-rx-hclk",	HACK_KEEP_RX_HCLK },
++	{ "keep-rx-fs",		HACK_KEEP_RX_FS },
++	{ "keep-tx-clk",	HACK_KEEP_TX_CLK },
++	{ "keep-tx-hclk",	HACK_KEEP_TX_HCLK },
++	{ "keep-tx-fs",		HACK_KEEP_TX_FS },
++	{ "rx-async-slave",	HACK_RX_ASYNC_SLAVE },
++};
++
+ struct davinci_mcasp {
+ 	struct snd_dmaengine_dai_dma_data dma_data[2];
+ 	void __iomem *base;
+@@ -78,6 +96,7 @@ struct davinci_mcasp {
+ 	struct device *dev;
+ 	struct snd_pcm_substream *substreams[2];
+ 	unsigned int dai_fmt;
++	u32 hacks;
+ 
+ 	/* McASP specific data */
+ 	int	tdm_slots;
+@@ -88,7 +107,7 @@ struct davinci_mcasp {
+ 	u8	*serial_dir;
+ 	u8	version;
+ 	u8	bclk_div;
+-	int	streams;
++	u8	streams;
+ 	u32	irq_request[2];
+ 	int	dma_request[2];
+ 
+@@ -165,14 +184,17 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
+ 
+ static bool mcasp_is_synchronous(struct davinci_mcasp *mcasp)
+ {
+-	u32 rxfmctl = mcasp_get_reg(mcasp, DAVINCI_MCASP_RXFMCTL_REG);
+ 	u32 aclkxctl = mcasp_get_reg(mcasp, DAVINCI_MCASP_ACLKXCTL_REG);
+ 
+-	return !(aclkxctl & TX_ASYNC) && rxfmctl & AFSRE;
++	return !(aclkxctl & TX_ASYNC);
+ }
+ 
+ static void mcasp_start_rx(struct davinci_mcasp *mcasp)
+ {
++	if (WARN_ON(mcasp->streams & BIT(SNDRV_PCM_STREAM_CAPTURE)))
++		return;
++	mcasp->streams |= BIT(SNDRV_PCM_STREAM_CAPTURE);
++
+ 	if (mcasp->rxnumevt) {	/* enable FIFO */
+ 		u32 reg = mcasp->fifo_base + MCASP_RFIFOCTL_OFFSET;
+ 
+@@ -182,7 +204,7 @@ static void mcasp_start_rx(struct davinci_mcasp *mcasp)
+ 
+ 	/* Start clocks */
+ 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXHCLKRST);
+-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXCLKRST);
++
+ 	/*
+ 	 * When ASYNC == 0 the transmit and receive sections operate
+ 	 * synchronously from the transmit clock and frame sync. We need to make
+@@ -191,6 +213,8 @@ static void mcasp_start_rx(struct davinci_mcasp *mcasp)
+ 	if (mcasp_is_synchronous(mcasp)) {
+ 		mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLX_REG, TXHCLKRST);
+ 		mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLX_REG, TXCLKRST);
++	} else {
++		mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXCLKRST);
+ 	}
+ 
+ 	/* Activate serializer(s) */
+@@ -198,9 +222,10 @@ static void mcasp_start_rx(struct davinci_mcasp *mcasp)
+ 	/* Release RX state machine */
+ 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXSMRST);
+ 	/* Release Frame Sync generator */
+-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXFSRST);
+ 	if (mcasp_is_synchronous(mcasp))
+ 		mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLX_REG, TXFSRST);
++	else
++		mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, RXFSRST);
+ 
+ 	/* enable receive IRQs */
+ 	mcasp_set_bits(mcasp, DAVINCI_MCASP_EVTCTLR_REG,
+@@ -211,6 +236,10 @@ static void mcasp_start_tx(struct davinci_mcasp *mcasp)
+ {
+ 	u32 cnt;
+ 
++	if (WARN_ON(mcasp->streams & BIT(SNDRV_PCM_STREAM_PLAYBACK)))
++		return;
++	mcasp->streams |= BIT(SNDRV_PCM_STREAM_PLAYBACK);
++
+ 	if (mcasp->txnumevt) {	/* enable FIFO */
+ 		u32 reg = mcasp->fifo_base + MCASP_WFIFOCTL_OFFSET;
+ 
+@@ -242,8 +271,6 @@ static void mcasp_start_tx(struct davinci_mcasp *mcasp)
+ 
+ static void davinci_mcasp_start(struct davinci_mcasp *mcasp, int stream)
+ {
+-	mcasp->streams++;
+-
+ 	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+ 		mcasp_start_tx(mcasp);
+ 	else
+@@ -252,19 +279,23 @@ static void davinci_mcasp_start(struct davinci_mcasp *mcasp, int stream)
+ 
+ static void mcasp_stop_rx(struct davinci_mcasp *mcasp)
+ {
++	if (WARN_ON(!(mcasp->streams & BIT(SNDRV_PCM_STREAM_CAPTURE))))
++		return;
++	mcasp->streams &= ~BIT(SNDRV_PCM_STREAM_CAPTURE);
++
+ 	/* disable IRQ sources */
+ 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_EVTCTLR_REG,
+ 		       mcasp->irq_request[SNDRV_PCM_STREAM_CAPTURE]);
+ 
++	mcasp_clr_bits(mcasp, DAVINCI_MCASP_GBLCTLR_REG, 0xff & ~mcasp->hacks);
++	mcasp_set_reg(mcasp, DAVINCI_MCASP_RXSTAT_REG, 0xFFFFFFFF);
++
+ 	/*
+ 	 * In synchronous mode stop the TX clocks if no other stream is
+ 	 * running
+ 	 */
+ 	if (mcasp_is_synchronous(mcasp) && !mcasp->streams)
+-		mcasp_set_reg(mcasp, DAVINCI_MCASP_GBLCTLX_REG, 0);
+-
+-	mcasp_set_reg(mcasp, DAVINCI_MCASP_GBLCTLR_REG, 0);
+-	mcasp_set_reg(mcasp, DAVINCI_MCASP_RXSTAT_REG, 0xFFFFFFFF);
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_GBLCTLX_REG, 0xff00 & ~mcasp->hacks);
+ 
+ 	if (mcasp->rxnumevt) {	/* disable FIFO */
+ 		u32 reg = mcasp->fifo_base + MCASP_RFIFOCTL_OFFSET;
+@@ -275,7 +306,9 @@ static void mcasp_stop_rx(struct davinci_mcasp *mcasp)
+ 
+ static void mcasp_stop_tx(struct davinci_mcasp *mcasp)
+ {
+-	u32 val = 0;
++	if (WARN_ON(!(mcasp->streams & BIT(SNDRV_PCM_STREAM_PLAYBACK))))
++		return;
++	mcasp->streams &= ~BIT(SNDRV_PCM_STREAM_PLAYBACK);
+ 
+ 	/* disable IRQ sources */
+ 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_EVTCTLX_REG,
+@@ -286,9 +319,10 @@ static void mcasp_stop_tx(struct davinci_mcasp *mcasp)
+ 	 * still running.
+ 	 */
+ 	if (mcasp_is_synchronous(mcasp) && mcasp->streams)
+-		val =  TXHCLKRST | TXCLKRST | TXFSRST;
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_GBLCTLX_REG, TXSERCLR | TXSMRST);
++	else
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_GBLCTLX_REG, 0xff00 & ~mcasp->hacks);
+ 
+-	mcasp_set_reg(mcasp, DAVINCI_MCASP_GBLCTLX_REG, val);
+ 	mcasp_set_reg(mcasp, DAVINCI_MCASP_TXSTAT_REG, 0xFFFFFFFF);
+ 
+ 	if (mcasp->txnumevt) {	/* disable FIFO */
+@@ -300,8 +334,6 @@ static void mcasp_stop_tx(struct davinci_mcasp *mcasp)
+ 
+ static void davinci_mcasp_stop(struct davinci_mcasp *mcasp, int stream)
+ {
+-	mcasp->streams--;
+-
+ 	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+ 		mcasp_stop_tx(mcasp);
+ 	else
+@@ -400,6 +432,7 @@ static int davinci_mcasp_set_dai_fmt(struct snd_soc_dai *cpu_dai,
+ 	u32 data_delay;
+ 	bool fs_pol_rising;
+ 	bool inv_fs = false;
++	bool rx_async_slave = !!(mcasp->hacks & HACK_RX_ASYNC_SLAVE);
+ 
+ 	if (!fmt)
+ 		return 0;
+@@ -445,41 +478,53 @@ static int davinci_mcasp_set_dai_fmt(struct snd_soc_dai *cpu_dai,
+ 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RXFMT_REG, FSRDLY(data_delay),
+ 		       FSRDLY(3));
+ 
++	if (rx_async_slave) {
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AHCLKR | ACLKR | AFSR);
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
++		mcasp_set_reg(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
++		mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
++	}
++
+ 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
+ 	case SND_SOC_DAIFMT_CBS_CFS:
+ 		/* codec is clock and frame slave */
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, ACLKXE);
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_TXFMCTL_REG, AFSXE);
+-
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
+-
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX | ACLKR);
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX | AFSR);
++		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX | AFSX);
++		if (!rx_async_slave) {
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKR | AFSR);
++		}
+ 		mcasp->bclk_master = 1;
+ 		break;
+ 	case SND_SOC_DAIFMT_CBS_CFM:
+ 		/* codec is clock slave and frame master */
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX | AFSR);
++
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, ACLKXE);
+ 		mcasp_clr_bits(mcasp, DAVINCI_MCASP_TXFMCTL_REG, AFSXE);
+-
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
+-		mcasp_clr_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
+-
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX | ACLKR);
+-		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX | AFSR);
++		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX);
++		if (!rx_async_slave) {
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
++			mcasp_clr_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKR);
++		}
+ 		mcasp->bclk_master = 1;
+ 		break;
+ 	case SND_SOC_DAIFMT_CBM_CFS:
+ 		/* codec is clock master and frame slave */
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX | ACLKR);
++
+ 		mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, ACLKXE);
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_TXFMCTL_REG, AFSXE);
+-
+-		mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
+-
+-		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX | ACLKR);
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX | AFSR);
++		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX);
++		if (!rx_async_slave) {
++			mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
++			mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSR);
++		}
+ 		mcasp->bclk_master = 0;
+ 		break;
+ 	case SND_SOC_DAIFMT_CBM_CFM:
+@@ -550,15 +595,15 @@ static int __davinci_mcasp_set_clkdiv(struct davinci_mcasp *mcasp, int div_id,
+ 	case MCASP_CLKDIV_AUXCLK:			/* MCLK divider */
+ 		mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG,
+ 			       AHCLKXDIV(div - 1), AHCLKXDIV_MASK);
+-		mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG,
+-			       AHCLKRDIV(div - 1), AHCLKRDIV_MASK);
++//		mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG,
++//			       AHCLKRDIV(div - 1), AHCLKRDIV_MASK);
+ 		break;
+ 
+ 	case MCASP_CLKDIV_BCLK:			/* BCLK divider */
+ 		mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG,
+ 			       ACLKXDIV(div - 1), ACLKXDIV_MASK);
+-		mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG,
+-			       ACLKRDIV(div - 1), ACLKRDIV_MASK);
++//		mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG,
++//			       ACLKRDIV(div - 1), ACLKRDIV_MASK);
+ 		if (explicit)
+ 			mcasp->bclk_div = div;
+ 		break;
+@@ -611,11 +656,11 @@ static int davinci_mcasp_set_sysclk(struct snd_soc_dai *dai, int clk_id,
+ 	pm_runtime_get_sync(mcasp->dev);
+ 	if (dir == SND_SOC_CLOCK_OUT) {
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXE);
+-		mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
++//		mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
+ 		mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AHCLKX);
+ 	} else {
+ 		mcasp_clr_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXE);
+-		mcasp_clr_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
++//		mcasp_clr_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
+ 		mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AHCLKX);
+ 	}
+ 
+@@ -877,6 +922,7 @@ static int mcasp_i2s_hw_param(struct davinci_mcasp *mcasp, int stream,
+ 	int total_slots;
+ 	int active_serializers;
+ 	u32 mask = 0;
++	bool rx_async_slave = !!(mcasp->hacks & HACK_RX_ASYNC_SLAVE);
+ 
+ 	total_slots = mcasp->tdm_slots;
+ 
+@@ -910,7 +956,9 @@ static int mcasp_i2s_hw_param(struct davinci_mcasp *mcasp, int stream,
+ 		for (i = 0; i < active_slots; i++)
+ 			mask |= (1 << i);
+ 	}
+-	mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
++
++	if (!rx_async_slave)
++		mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
+ 
+ 	if (stream == SNDRV_PCM_STREAM_PLAYBACK) {
+ 		mcasp_set_reg(mcasp, DAVINCI_MCASP_TXTDM_REG, mask);
+@@ -925,7 +973,7 @@ static int mcasp_i2s_hw_param(struct davinci_mcasp *mcasp, int stream,
+ 		 * not running already we need to configure the TX slots in
+ 		 * order to have correct FSX on the bus
+ 		 */
+-		if (mcasp_is_synchronous(mcasp) && !mcasp->channels)
++		if (mcasp_is_synchronous(mcasp) && !mcasp->streams)
+ 			mcasp_mod_bits(mcasp, DAVINCI_MCASP_TXFMCTL_REG,
+ 				       FSXMOD(total_slots), FSXMOD(0x1FF));
+ 	}
+@@ -1620,7 +1668,7 @@ static struct davinci_mcasp_pdata *davinci_mcasp_set_pdata_from_of(
+ 	if (ret >= 0) {
+ 		if (val < 2 || val > 32) {
+ 			dev_err(&pdev->dev,
+-				"tdm-slots must be in rage [2-32]\n");
++				"tdm-slots must be in range [2-32]\n");
+ 			ret = -EINVAL;
+ 			goto nodata;
+ 		}
+@@ -1797,6 +1845,7 @@ static int davinci_mcasp_probe(struct platform_device *pdev)
+ 	int *dma;
+ 	int irq;
+ 	int ret;
++	int i;
+ 
+ 	if (!pdev->dev.platform_data && !pdev->dev.of_node) {
+ 		dev_err(&pdev->dev, "No platform data supplied\n");
+@@ -1831,6 +1880,10 @@ static int davinci_mcasp_probe(struct platform_device *pdev)
+ 
+ 	pm_runtime_enable(&pdev->dev);
+ 
++	for (i = 0; i < sizeof(hacks)/sizeof(*hacks); i++)
++		if (of_property_read_bool(pdev->dev.of_node, hacks[i].prop))
++			mcasp->hacks |= hacks[i].value;
++
+ 	mcasp->op_mode = pdata->op_mode;
+ 	/* sanity check for tdm slots parameter */
+ 	if (mcasp->op_mode == DAVINCI_MCASP_DIT_MODE) {
+-- 
+2.11.0
+
