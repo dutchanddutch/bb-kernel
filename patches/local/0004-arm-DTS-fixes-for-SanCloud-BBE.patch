@@ -1,0 +1,486 @@
+From bbb902e6ab4aa0fc38f0fb75403a51341344944b Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Mon, 30 Jan 2017 13:55:47 +0100
+Subject: [PATCH] arm: DTS: fixes for SanCloud BBE
+
+---
+ arch/arm/boot/dts/Makefile                         |   1 +
+ .../arm/boot/dts/am335x-sancloud-bbe-lps331ap.dtsi |  24 +++
+ arch/arm/boot/dts/am335x-sancloud-bbe-mpu6050.dtsi |  24 +++
+ arch/arm/boot/dts/am335x-sancloud-bbe-nohdmi.dts   | 154 +++++++++++++++++
+ arch/arm/boot/dts/am335x-sancloud-bbe.dts          | 192 +++------------------
+ 5 files changed, 224 insertions(+), 171 deletions(-)
+ create mode 100644 arch/arm/boot/dts/am335x-sancloud-bbe-lps331ap.dtsi
+ create mode 100644 arch/arm/boot/dts/am335x-sancloud-bbe-mpu6050.dtsi
+ create mode 100644 arch/arm/boot/dts/am335x-sancloud-bbe-nohdmi.dts
+
+diff --git a/arch/arm/boot/dts/Makefile b/arch/arm/boot/dts/Makefile
+index 37e42b184ada..137e437d9b7a 100644
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -556,6 +556,7 @@ dtb-$(CONFIG_SOC_AM33XX) += \
+ 	am335x-boneblack.dtb \
+ 	am335x-boneblack-uboot.dtb \
+ 	am335x-sancloud-bbe.dtb \
++	am335x-sancloud-bbe-nohdmi.dtb \
+ 	am335x-boneblack-wireless-roboticscape.dtb \
+ 	am335x-boneblack-roboticscape.dtb \
+ 	am335x-boneblue.dtb \
+diff --git a/arch/arm/boot/dts/am335x-sancloud-bbe-lps331ap.dtsi b/arch/arm/boot/dts/am335x-sancloud-bbe-lps331ap.dtsi
+new file mode 100644
+index 000000000000..36cf7fcb1b9e
+--- /dev/null
++++ b/arch/arm/boot/dts/am335x-sancloud-bbe-lps331ap.dtsi
+@@ -0,0 +1,24 @@
++#pragma once
++#include <dt-bindings/interrupt-controller/irq.h>
++
++// ST LPS331AP barometer/thermometer on BeagleBone Enhanced
++
++&am33xx_pinmux {
++	lps3331ap_pins: lps3331ap {
++		pinctrl-single,pins = <
++			0x68 (PIN_INPUT | MUX_MODE7)	/* gpio1_26 */
++		>;
++	};
++};
++
++&i2c0 {
++	lps331ap: lps331ap@5c {
++		reg = <0x5c>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&lps3331ap_pins>;
++		compatible = "st,lps331ap";
++		st,drdy-int-pin = <1>;
++		interrupt-parent = <&gpio1>;
++		interrupts = <26 IRQ_TYPE_EDGE_RISING>;
++	};
++};
+diff --git a/arch/arm/boot/dts/am335x-sancloud-bbe-mpu6050.dtsi b/arch/arm/boot/dts/am335x-sancloud-bbe-mpu6050.dtsi
+new file mode 100644
+index 000000000000..1e51e5fd307b
+--- /dev/null
++++ b/arch/arm/boot/dts/am335x-sancloud-bbe-mpu6050.dtsi
+@@ -0,0 +1,24 @@
++#pragma once
++#include <dt-bindings/interrupt-controller/irq.h>
++
++// Invensense MPU6050 accelerometer/gyro on BeagleBone Enhanced
++
++&am33xx_pinmux {
++	mpu6050_pins: mpu6050 {
++		pinctrl-single,pins = <
++			0x168 (PIN_INPUT | MUX_MODE7)	/* spi0_sclk.gpio0_2 */
++		>;
++	};
++};
++
++&i2c0 {
++	mpu6050: mpu6050@68 {
++		reg = <0x68>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&mpu6050_pins>;
++		compatible = "invensense,mpu6050";
++		interrupt-parent = <&gpio0>;
++		interrupts = <2 IRQ_TYPE_EDGE_RISING>;
++		//orientation = <0xff 0 0 0 1 0 0 0 0xff>;
++	};
++};
+diff --git a/arch/arm/boot/dts/am335x-sancloud-bbe-nohdmi.dts b/arch/arm/boot/dts/am335x-sancloud-bbe-nohdmi.dts
+new file mode 100644
+index 000000000000..181acb66e3d7
+--- /dev/null
++++ b/arch/arm/boot/dts/am335x-sancloud-bbe-nohdmi.dts
+@@ -0,0 +1,154 @@
++/*
++ * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++/dts-v1/;
++
++#include "am33xx.dtsi"
++#include "am335x-bone-common.dtsi"
++#include "am335x-sancloud-bbe-lps331ap.dtsi"
++#include "am335x-sancloud-bbe-mpu6050.dtsi"
++#include <dt-bindings/interrupt-controller/irq.h>
++/* #include "am335x-bone-jtag.dtsi" */
++
++// FIXME audio osc and regulator stuff can be shared with beaglebone black
++
++/ {
++	model = "SanCloud BeagleBone Enhanced";
++	compatible = "sancloud,am335x-boneenhanced", "ti,am335x-bone-black", "ti,am335x-bone", "ti,am33xx";
++};
++
++&ldo3_reg {
++	regulator-min-microvolt = <1800000>;
++	regulator-max-microvolt = <1800000>;
++	regulator-always-on;
++};
++
++&mmc1 {
++	vmmc-supply = <&vmmcsd_fixed>;
++};
++
++&mmc2 {
++	vmmc-supply = <&vmmcsd_fixed>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&emmc_pins>;
++	bus-width = <8>;
++	status = "okay";
++	ti,vcc-aux-disable-is-sleep;
++};
++
++// audio osc
++
++&am33xx_pinmux {
++	audio_osc_en_pin: audio_osc_en {
++		pinctrl-single,pins = <
++			0x6c (PIN_OUTPUT_PULLDOWN | MUX_MODE7) /* gpio1_27 */
++		>;
++	};
++};
++
++/ {
++	virt_24576000_ck: virt_24000000_ck {
++		#clock-cells = <0>;
++		compatible = "fixed-clock";
++		clock-frequency = <24576000>;
++	};
++
++	audio_osc_ck: audio_osc_ck {
++		#clock-cells = <0>;
++		compatible = "gpio-gate-clock";
++		clocks = <&virt_24576000_ck>;
++		enable-gpios = <&gpio1 27 0>; /* BeagleBone Black Clk enable on GPIO1_27 */
++		pinctrl-names = "default";
++		pinctrl-0 = <&audio_osc_en_pin>;
++	};
++};
++
++// Gigabit Ethernet
++
++&am33xx_pinmux {
++	cpsw_default: cpsw_default {
++		pinctrl-single,pins = <
++			/* Slave 1 */
++			0x114 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txen.rgmii1_tctl */
++			0x118 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxdv.rgmii1_rctl */
++			0x11c (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd3.rgmii1_td3 */
++			0x120 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd2.rgmii1_td2 */
++			0x124 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd1.rgmii1_td1 */
++			0x128 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd0.rgmii1_td0 */
++			0x12c (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txclk.rgmii1_tclk */
++			0x130 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxclk.rgmii1_rclk */
++			0x134 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd3.rgmii1_rd3 */
++			0x138 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd2.rgmii1_rd2 */
++			0x13c (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd1.rgmii1_rd1 */
++			0x140 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd0.rgmii1_rd0 */
++		>;
++	};
++
++	cpsw_sleep: cpsw_sleep {
++		pinctrl-single,pins = <
++			/* Slave 1 reset value */
++			0x114 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x118 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x11c (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x120 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x124 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x128 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x12c (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x130 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x134 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x138 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x13c (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x140 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++		>;
++	};
++
++	davinci_mdio_default: davinci_mdio_default {
++		pinctrl-single,pins = <
++			/* MDIO */
++			0x148 (PIN_INPUT_PULLUP | SLEWCTRL_FAST | MUX_MODE0)	/* mdio_data.mdio_data */
++			0x14c (PIN_OUTPUT_PULLUP | MUX_MODE0)			/* mdio_clk.mdio_clk */
++		>;
++	};
++
++	davinci_mdio_sleep: davinci_mdio_sleep {
++		pinctrl-single,pins = <
++			/* MDIO reset value */
++			0x148 (PIN_INPUT_PULLDOWN | MUX_MODE7)
++			0x14c (PIN_INPUT_PULLDOWN | MUX_MODE7)
++		>;
++	};
++};
++
++&mac {
++	pinctrl-names = "default", "sleep";
++	pinctrl-0 = <&cpsw_default>;
++	pinctrl-1 = <&cpsw_sleep>;
++};
++
++&davinci_mdio {
++	pinctrl-names = "default", "sleep";
++	pinctrl-0 = <&davinci_mdio_default>;
++	pinctrl-1 = <&davinci_mdio_sleep>;
++};
++
++&cpsw_emac0 {
++	phy_id = <&davinci_mdio>, <0>;
++	phy-mode = "rgmii-txid";
++};
++
++// USB hub
++
++&am33xx_pinmux {
++	pinctrl-names = "default";
++	pinctrl-0 = <&usb_hub_reset_pin>;
++
++	usb_hub_reset_pin: usb_hub_reset {
++		pinctrl-single,pins = <
++			0x144 (PIN_OUTPUT_PULLUP | MUX_MODE7)	/* mcasp0_ahclkr.gpio3_17 */
++		>;
++	};
++};
+diff --git a/arch/arm/boot/dts/am335x-sancloud-bbe.dts b/arch/arm/boot/dts/am335x-sancloud-bbe.dts
+index a36b04b750d4..c226c47f36a6 100644
+--- a/arch/arm/boot/dts/am335x-sancloud-bbe.dts
++++ b/arch/arm/boot/dts/am335x-sancloud-bbe.dts
+@@ -1,46 +1,9 @@
+-/*
+- * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License version 2 as
+- * published by the Free Software Foundation.
+- */
+-/dts-v1/;
+-
+-#include "am33xx.dtsi"
+-#include "am335x-bone-common.dtsi"
+-#include <dt-bindings/interrupt-controller/irq.h>
++#include "am335x-sancloud-bbe-nohdmi.dts"
+ #include <dt-bindings/display/tda998x.h>
+-/* #include "am335x-bone-jtag.dtsi" */
+ 
+-/ {
+-	model = "SanCloud BeagleBone Enhanced";
+-	compatible = "sancloud,am335x-boneenhanced", "ti,am335x-bone-black", "ti,am335x-bone", "ti,am33xx";
+-};
+-
+-&ldo3_reg {
+-	regulator-min-microvolt = <1800000>;
+-	regulator-max-microvolt = <1800000>;
+-	regulator-always-on;
+-};
+-
+-&mmc1 {
+-	vmmc-supply = <&vmmcsd_fixed>;
+-};
+-
+-&mmc2 {
+-	vmmc-supply = <&vmmcsd_fixed>;
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&emmc_pins>;
+-	bus-width = <8>;
+-	status = "okay";
+-	ti,vcc-aux-disable-is-sleep;
+-};
++/* FIXME these should be in a shared dtsi file */
+ 
+ &am33xx_pinmux {
+-	pinctrl-names = "default";
+-	pinctrl-0 = <&usb_hub_ctrl>;
+-
+ 	nxp_hdmi_bonelt_pins: nxp_hdmi_bonelt_pins {
+ 		pinctrl-single,pins = <
+ 			AM33XX_IOPAD(0x9b0, PIN_OUTPUT_PULLDOWN | MUX_MODE3)	/* xdma_event_intr0 */
+@@ -71,112 +34,6 @@
+ 			AM33XX_IOPAD(0x9b0, PIN_OUTPUT_PULLDOWN | MUX_MODE3)	/* xdma_event_intr0 */
+ 		>;
+ 	};
+-
+-	cpsw_default: cpsw_default {
+-		pinctrl-single,pins = <
+-			/* Slave 1 */
+-			0x114 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txen.rgmii1_tctl */
+-			0x118 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxdv.rgmii1_rctl */
+-			0x11c (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd3.rgmii1_td3 */
+-			0x120 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd2.rgmii1_td2 */
+-			0x124 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd1.rgmii1_td1 */
+-			0x128 (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txd0.rgmii1_td0 */
+-			0x12c (PIN_OUTPUT_PULLDOWN | MUX_MODE2)	/* mii1_txclk.rgmii1_tclk */
+-			0x130 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxclk.rgmii1_rclk */
+-			0x134 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd3.rgmii1_rd3 */
+-			0x138 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd2.rgmii1_rd2 */
+-			0x13c (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd1.rgmii1_rd1 */
+-			0x140 (PIN_INPUT_PULLDOWN | MUX_MODE2)	/* mii1_rxd0.rgmii1_rd0 */
+-		>;
+-	};
+-
+-	cpsw_sleep: cpsw_sleep {
+-		pinctrl-single,pins = <
+-			/* Slave 1 reset value */
+-			0x114 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x118 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x11c (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x120 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x124 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x128 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x12c (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x130 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x134 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x138 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x13c (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x140 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-		>;
+-	};
+-
+-	davinci_mdio_default: davinci_mdio_default {
+-		pinctrl-single,pins = <
+-			/* MDIO */
+-			0x148 (PIN_INPUT_PULLUP | SLEWCTRL_FAST | MUX_MODE0)	/* mdio_data.mdio_data */
+-			0x14c (PIN_OUTPUT_PULLUP | MUX_MODE0)			/* mdio_clk.mdio_clk */
+-		>;
+-	};
+-
+-	davinci_mdio_sleep: davinci_mdio_sleep {
+-		pinctrl-single,pins = <
+-			/* MDIO reset value */
+-			0x148 (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-			0x14c (PIN_INPUT_PULLDOWN | MUX_MODE7)
+-		>;
+-	};
+-
+-	usb_hub_ctrl: usb_hub_ctrl {
+-		pinctrl-single,pins = <
+-			0x144 (PIN_OUTPUT_PULLUP | MUX_MODE7)	/* mcasp0_ahclkr.gpio3_17 */
+-		>;
+-	};
+-
+-	mpu6050_pins: pinmux_mpu6050_pins {
+-		pinctrl-single,pins = <
+-			0x168 (PIN_INPUT | MUX_MODE7)	/* spi0_sclk.gpio0_2 */
+-		>;
+-	};
+-
+-	lps3331ap_pins: pinmux_lps3331ap_pins {
+-		pinctrl-single,pins = <
+-			0x6C (PIN_INPUT | MUX_MODE7)	/* conf_gpmc_a11.gpio1_27 */
+-		>;
+-	};
+-
+-	mcasp0_pins: mcasp0_pins {
+-		pinctrl-single,pins = <
+-			AM33XX_IOPAD(0x9ac, PIN_INPUT_PULLUP | MUX_MODE0) /* mcasp0_ahcklx.mcasp0_ahclkx */
+-			AM33XX_IOPAD(0x99c, PIN_OUTPUT_PULLDOWN | MUX_MODE2) /* mcasp0_ahclkr.mcasp0_axr2*/
+-			AM33XX_IOPAD(0x994, PIN_OUTPUT_PULLUP | MUX_MODE0) /* mcasp0_fsx.mcasp0_fsx */
+-			AM33XX_IOPAD(0x990, PIN_OUTPUT_PULLDOWN | MUX_MODE0) /* mcasp0_aclkx.mcasp0_aclkx */
+-			AM33XX_IOPAD(0x86c, PIN_OUTPUT_PULLDOWN | MUX_MODE7) /* gpmc_a11.GPIO1_27 */
+-		>;
+-	};
+-};
+-
+-&lcdc {
+-	status = "okay";
+-	port {
+-		lcdc_0: endpoint@0 {
+-			remote-endpoint = <&hdmi_0>;
+-		};
+-	};
+-};
+-
+-&mac {
+-	pinctrl-names = "default", "sleep";
+-	pinctrl-0 = <&cpsw_default>;
+-	pinctrl-1 = <&cpsw_sleep>;
+-};
+-
+-&davinci_mdio {
+-	pinctrl-names = "default", "sleep";
+-	pinctrl-0 = <&davinci_mdio_default>;
+-	pinctrl-1 = <&davinci_mdio_sleep>;
+-};
+-
+-&cpsw_emac0 {
+-	phy_id = <&davinci_mdio>, <0>;
+-	phy-mode = "rgmii-txid";
+ };
+ 
+ &i2c0 {
+@@ -199,21 +56,27 @@
+ 			};
+ 		};
+ 	};
++};
+ 
+-	lps331ap: lps331ap@5C {
+-		compatible = "st,lps331ap";
+-		st,drdy-int-pin = <1>;
+-		reg = <0x5C>;
+-		interrupt-parent = <&gpio1>;
+-		interrupts = <27 IRQ_TYPE_EDGE_RISING>;
++&lcdc {
++	status = "okay";
++	port {
++		lcdc_0: endpoint@0 {
++			remote-endpoint = <&hdmi_0>;
++		};
+ 	};
++};
+ 
+-	mpu6050: mpu6050@68 {
+-		compatible = "invensense,mpu6050";
+-		reg = <0x68>;
+-		interrupt-parent = <&gpio0>;
+-		interrupts = <2 IRQ_TYPE_EDGE_RISING>;
+-		//orientation = <0xff 0 0 0 1 0 0 0 0xff>;
++/* HDMI audio */
++
++&am33xx_pinmux {
++	mcasp0_pins: mcasp0_pins {
++		pinctrl-single,pins = <
++			AM33XX_IOPAD(0x9ac, PIN_INPUT_PULLUP | MUX_MODE0) /* mcasp0_ahcklx.mcasp0_ahclkx */
++			AM33XX_IOPAD(0x99c, PIN_OUTPUT_PULLDOWN | MUX_MODE2) /* mcasp0_ahclkr.mcasp0_axr2*/
++			AM33XX_IOPAD(0x994, PIN_OUTPUT_PULLUP | MUX_MODE0) /* mcasp0_fsx.mcasp0_fsx */
++			AM33XX_IOPAD(0x990, PIN_OUTPUT_PULLDOWN | MUX_MODE0) /* mcasp0_aclkx.mcasp0_aclkx */
++		>;
+ 	};
+ };
+ 
+@@ -232,19 +95,6 @@
+ };
+ 
+ / {
+-	clk_mcasp0_fixed: clk_mcasp0_fixed {
+-		#clock-cells = <0>;
+-		compatible = "fixed-clock";
+-		clock-frequency = <24576000>;
+-	};
+-
+-	clk_mcasp0: clk_mcasp0 {
+-		#clock-cells = <0>;
+-		compatible = "gpio-gate-clock";
+-		clocks = <&clk_mcasp0_fixed>;
+-		enable-gpios = <&gpio1 27 0>; /* BeagleBone Black Clk enable on GPIO1_27 */
+-	};
+-
+ 	sound {
+ 		compatible = "simple-audio-card";
+ 		simple-audio-card,name = "TI BeagleBone Black";
+@@ -254,7 +104,7 @@
+ 
+ 		dailink0_master: simple-audio-card,cpu {
+ 			sound-dai = <&mcasp0>;
+-			clocks = <&clk_mcasp0>;
++			clocks = <&audio_osc_ck>;
+ 		};
+ 
+ 		simple-audio-card,codec {
+-- 
+2.11.0
+
