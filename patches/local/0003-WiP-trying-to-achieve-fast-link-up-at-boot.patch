@@ -1,0 +1,135 @@
+From 3ebe8c85a490cdf3aaf12756adb03ddf8c58fe5b Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Sat, 17 Dec 2016 03:51:43 +0100
+Subject: [PATCH] WiP trying to achieve fast link up at boot
+
+The phy already has been reset superfluously by u-boot and probably has
+link up already.  Try to actually use that!
+---
+ drivers/net/ethernet/ti/davinci_mdio.c |  8 ++++++++
+ drivers/net/phy/phy.c                  |  2 +-
+ drivers/net/phy/phy_device.c           |  7 ++++++-
+ drivers/net/phy/smsc.c                 | 28 ++++++++++++++++++++++++++++
+ 4 files changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/ti/davinci_mdio.c b/drivers/net/ethernet/ti/davinci_mdio.c
+index 425856f307e4..53f62c3480a3 100644
+--- a/drivers/net/ethernet/ti/davinci_mdio.c
++++ b/drivers/net/ethernet/ti/davinci_mdio.c
+@@ -281,6 +281,11 @@ static int davinci_mdio_read(struct mii_bus *bus, int phy_id, int phy_reg)
+ 		break;
+ 	}
+ 
++	if (ret < 0)
++		dev_dbg( data->dev, "reg %d read err %d\n", phy_reg, ret );
++	else
++		dev_dbg( data->dev, "reg %d read 0x%04x\n", phy_reg, ret );
++
+ 	pm_runtime_mark_last_busy(data->dev);
+ 	pm_runtime_put_autosuspend(data->dev);
+ 	return ret;
+@@ -296,6 +301,9 @@ static int davinci_mdio_write(struct mii_bus *bus, int phy_id,
+ 	if (phy_reg & ~PHY_REG_MASK || phy_id & ~PHY_ID_MASK)
+ 		return -EINVAL;
+ 
++	dev_dbg( data->dev, "reg %d write 0x%04x\n", phy_reg, phy_data );
++	WARN_ON( phy_reg == 0 && (phy_data & 0x8200) );
++
+ 	ret = pm_runtime_get_sync(data->dev);
+ 	if (ret < 0) {
+ 		pm_runtime_put_noidle(data->dev);
+diff --git a/drivers/net/phy/phy.c b/drivers/net/phy/phy.c
+index f424b867f73e..342272d31d89 100644
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -604,7 +604,7 @@ EXPORT_SYMBOL(phy_start_aneg);
+  */
+ void phy_start_machine(struct phy_device *phydev)
+ {
+-	queue_delayed_work(system_power_efficient_wq, &phydev->state_queue, HZ);
++	queue_delayed_work(system_power_efficient_wq, &phydev->state_queue, 0);
+ }
+ 
+ /**
+diff --git a/drivers/net/phy/phy_device.c b/drivers/net/phy/phy_device.c
+index c4ceb082e970..19b9e26bd333 100644
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -1084,6 +1084,7 @@ static int genphy_config_advert(struct phy_device *phydev)
+ 	adv |= ethtool_adv_to_mii_adv_t(advertise);
+ 
+ 	if (adv != oldadv) {
++		dev_info( &phydev->mdio.dev, "changing advert from 0x%x to 0x%x\n", oldadv, adv );
+ 		err = phy_write(phydev, MII_ADVERTISE, adv);
+ 
+ 		if (err < 0)
+@@ -1164,6 +1165,8 @@ int genphy_restart_aneg(struct phy_device *phydev)
+ 	if (ctl < 0)
+ 		return ctl;
+ 
++	WARN_ON(1);
++
+ 	ctl |= BMCR_ANENABLE | BMCR_ANRESTART;
+ 
+ 	/* Don't isolate the PHY if we're negotiating */
+@@ -1207,8 +1210,10 @@ int genphy_config_aneg(struct phy_device *phydev)
+ 	/* Only restart aneg if we are advertising something different
+ 	 * than we were before.
+ 	 */
+-	if (result > 0)
++	if (result > 0) {
+ 		result = genphy_restart_aneg(phydev);
++		asm("" : "+r"(result));
++	}
+ 
+ 	return result;
+ }
+diff --git a/drivers/net/phy/smsc.c b/drivers/net/phy/smsc.c
+index b62c4aaee40b..211fa6afea38 100644
+--- a/drivers/net/phy/smsc.c
++++ b/drivers/net/phy/smsc.c
+@@ -65,6 +65,31 @@ static int smsc_phy_config_init(struct phy_device *phydev)
+ 	return smsc_phy_ack_interrupt(phydev);
+ }
+ 
++static int smsc_phy_quickstart(struct phy_device *phydev)
++{
++	int rc;
++
++	if (phydev->state != PHY_READY)
++		return 1;
++
++	rc = phy_read(phydev, MII_BMCR);
++	if (rc < 0)
++		return rc;
++	rc &= ~( 0x7f | BMCR_FULLDPLX | BMCR_SPEED100);
++	if (rc != BMCR_ANENABLE) {
++		dev_info( &phydev->mdio.dev, "strange BMCR\n" );
++		return 1;
++	}
++
++	rc = phy_read(phydev, MII_ADVERTISE);
++	if (rc < 0)
++		return rc;
++
++	phydev->advertising = mii_adv_to_ethtool_adv_t(rc);
++	phydev->state = PHY_RESUMING;
++	return 0;
++}
++
+ static int smsc_phy_reset(struct phy_device *phydev)
+ {
+ 	int rc = phy_read(phydev, MII_LAN83C185_SPECIAL_MODES);
+@@ -78,6 +103,9 @@ static int smsc_phy_reset(struct phy_device *phydev)
+ 		/* set "all capable" mode */
+ 		rc |= MII_LAN83C185_MODE_ALL;
+ 		phy_write(phydev, MII_LAN83C185_SPECIAL_MODES, rc);
++	} else {
++		if (smsc_phy_quickstart(phydev) == 0)
++			return 0;
+ 	}
+ 
+ 	/* reset the phy */
+-- 
+2.10.2
+
