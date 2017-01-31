@@ -526,7 +526,7 @@ drivers
 soc
 beaglebone
 dir 'build/gcc'
-#dir 'drivers/ti/sgx'
+dir 'drivers/ti/sgx'
 dir 'local'
 
 sync_mainline_dtc () {
