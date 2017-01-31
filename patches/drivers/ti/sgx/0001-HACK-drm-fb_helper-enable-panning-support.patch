@@ -1,7 +1,7 @@
-From 2e65df6fb029057b8e2f6981291c3b683c8663c0 Mon Sep 17 00:00:00 2001
+From 0c0aa680aa6907c673ccc6a6b6d80d922926abf0 Mon Sep 17 00:00:00 2001
 From: Darren Etheridge <detheridge@ti.com>
 Date: Thu, 24 Jul 2014 11:49:28 -0500
-Subject: [PATCH 1/6] HACK: drm/fb_helper: enable panning support
+Subject: [PATCH 1/7] HACK: drm/fb_helper: enable panning support
 
 Increase the size of the buffer that is created in the fbdev emulation
 helpers.  And fill in the var structure with the amount that was allocated.
@@ -12,7 +12,7 @@ Signed-off-by: Darren Etheridge <detheridge@ti.com>
  1 file changed, 8 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/gpu/drm/drm_fb_cma_helper.c b/drivers/gpu/drm/drm_fb_cma_helper.c
-index 1fd6eac..843163e 100644
+index 1fd6eac1400c..843163eb7056 100644
 --- a/drivers/gpu/drm/drm_fb_cma_helper.c
 +++ b/drivers/gpu/drm/drm_fb_cma_helper.c
 @@ -28,6 +28,12 @@
@@ -47,5 +47,5 @@ index 1fd6eac..843163e 100644
  	offset = fbi->var.xoffset * bytes_per_pixel;
  	offset += fbi->var.yoffset * fb->pitches[0];
 -- 
-2.10.2
+2.11.0
 

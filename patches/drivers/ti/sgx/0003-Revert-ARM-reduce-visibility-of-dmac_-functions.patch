@@ -1,7 +1,7 @@
-From df2d6cb53948d9f0641c72ae643eba19f13066b8 Mon Sep 17 00:00:00 2001
+From 9ae4cb98c9ea32cca913fb0e8cc31b84f75b39ac Mon Sep 17 00:00:00 2001
 From: Robert Nelson <robertcnelson@gmail.com>
 Date: Mon, 4 Jan 2016 11:00:59 -0600
-Subject: [PATCH 5/6] Revert "ARM: reduce visibility of dmac_* functions"
+Subject: [PATCH 3/7] Revert "ARM: reduce visibility of dmac_* functions"
 
 This reverts commit 1234e3fda9aa24b2d650bbcd9ef09d5f6a12dc86.
 
@@ -15,7 +15,7 @@ Signed-off-by: Robert Nelson <robertcnelson@gmail.com>
  delete mode 100644 arch/arm/mm/dma.h
 
 diff --git a/arch/arm/include/asm/cacheflush.h b/arch/arm/include/asm/cacheflush.h
-index bdd283b..b8039a6 100644
+index bdd283bc5842..b8039a603cc8 100644
 --- a/arch/arm/include/asm/cacheflush.h
 +++ b/arch/arm/include/asm/cacheflush.h
 @@ -140,6 +140,8 @@ extern struct cpu_cache_fns cpu_cache;
@@ -37,7 +37,7 @@ index bdd283b..b8039a6 100644
  
  #endif
 diff --git a/arch/arm/include/asm/glue-cache.h b/arch/arm/include/asm/glue-cache.h
-index 01c3d92..9f94cba 100644
+index 01c3d92624e5..9f94cba692c0 100644
 --- a/arch/arm/include/asm/glue-cache.h
 +++ b/arch/arm/include/asm/glue-cache.h
 @@ -154,6 +154,8 @@ static inline void nop_dma_unmap_area(const void *s, size_t l, int f) { }
@@ -50,7 +50,7 @@ index 01c3d92..9f94cba 100644
  #endif
  
 diff --git a/arch/arm/mm/dma-mapping.c b/arch/arm/mm/dma-mapping.c
-index ab77100..12ddd32 100644
+index ab7710002ba6..12ddd32e1736 100644
 --- a/arch/arm/mm/dma-mapping.c
 +++ b/arch/arm/mm/dma-mapping.c
 @@ -39,7 +39,6 @@
@@ -63,7 +63,7 @@ index ab77100..12ddd32 100644
  struct arm_dma_alloc_args {
 diff --git a/arch/arm/mm/dma.h b/arch/arm/mm/dma.h
 deleted file mode 100644
-index 70ea6852..0000000
+index 70ea6852f94e..000000000000
 --- a/arch/arm/mm/dma.h
 +++ /dev/null
 @@ -1,32 +0,0 @@
@@ -100,5 +100,5 @@ index 70ea6852..0000000
 -
 -#endif
 -- 
-2.10.2
+2.11.0
 

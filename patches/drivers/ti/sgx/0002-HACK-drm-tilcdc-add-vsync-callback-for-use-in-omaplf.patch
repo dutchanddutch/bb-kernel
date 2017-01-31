@@ -1,7 +1,7 @@
-From 954e7d5791ff176f3b046575a8465c880d4eb536 Mon Sep 17 00:00:00 2001
+From 3dd94ab4418ba857282931c35a96a8e90e41ffd1 Mon Sep 17 00:00:00 2001
 From: Darren Etheridge <detheridge@ti.com>
 Date: Fri, 11 Jul 2014 09:15:25 -0500
-Subject: [PATCH 2/6] HACK: drm/tilcdc: add vsync callback for use in omaplfb
+Subject: [PATCH 2/7] HACK: drm/tilcdc: add vsync callback for use in omaplfb
  for gpu
 
 Add a vsync callback registration API that is identical to what was done
@@ -19,7 +19,7 @@ Signed-off-by: Darren Etheridge <detheridge@ti.com>
  2 files changed, 38 insertions(+)
 
 diff --git a/drivers/gpu/drm/tilcdc/tilcdc_crtc.c b/drivers/gpu/drm/tilcdc/tilcdc_crtc.c
-index 52ebe8f..062c4d7 100644
+index 52ebe8fc1784..062c4d71677c 100644
 --- a/drivers/gpu/drm/tilcdc/tilcdc_crtc.c
 +++ b/drivers/gpu/drm/tilcdc/tilcdc_crtc.c
 @@ -54,6 +54,10 @@ struct tilcdc_crtc {
@@ -77,7 +77,7 @@ index 52ebe8f..062c4d7 100644
  		}
  
 diff --git a/drivers/gpu/drm/tilcdc/tilcdc_drv.h b/drivers/gpu/drm/tilcdc/tilcdc_drv.h
-index 9780c37..3c62b3a 100644
+index 9780c37ec4cd..3c62b3a33047 100644
 --- a/drivers/gpu/drm/tilcdc/tilcdc_drv.h
 +++ b/drivers/gpu/drm/tilcdc/tilcdc_drv.h
 @@ -179,4 +179,9 @@ int tilcdc_crtc_update_fb(struct drm_crtc *crtc,
@@ -91,5 +91,5 @@ index 9780c37..3c62b3a 100644
 +
  #endif /* __TILCDC_DRV_H__ */
 -- 
-2.10.2
+2.11.0
 
