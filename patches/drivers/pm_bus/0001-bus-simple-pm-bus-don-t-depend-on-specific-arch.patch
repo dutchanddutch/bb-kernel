@@ -4,6 +4,8 @@ Date: Thu, 27 Oct 2016 09:50:31 +0200
 Subject: [PATCH] bus: simple-pm-bus: don't depend on specific arch
 
 This driver is also useful on e.g. TI SoCs.
+
+Signed-off-by: Matthijs van Duin <matthijsvanduin@gmail.com>
 ---
  drivers/bus/Kconfig | 1 -
  1 file changed, 1 deletion(-)
