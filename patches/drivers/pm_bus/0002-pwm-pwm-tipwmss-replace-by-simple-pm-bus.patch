@@ -1,0 +1,132 @@
+From f3f854d5a7bb4c2cd8c5a7fadb2b7849ad6bd41f Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Sun, 5 Feb 2017 01:03:20 +0100
+Subject: [PATCH] pwm: pwm-tipwmss: replace by simple-pm-bus
+
+The pwmss driver is now equivalent to simple-pm-bus for all practical
+purposes, hence redundant.
+
+Signed-off-by: Matthijs van Duin <matthijsvanduin@gmail.com>
+---
+ drivers/bus/simple-pm-bus.c |  1 +
+ drivers/pwm/Kconfig         |  6 +----
+ drivers/pwm/Makefile        |  1 -
+ drivers/pwm/pwm-tipwmss.c   | 65 ---------------------------------------------
+ 4 files changed, 2 insertions(+), 71 deletions(-)
+ delete mode 100644 drivers/pwm/pwm-tipwmss.c
+
+diff --git a/drivers/bus/simple-pm-bus.c b/drivers/bus/simple-pm-bus.c
+index c5eb46cbf388..eef584b0fca3 100644
+--- a/drivers/bus/simple-pm-bus.c
++++ b/drivers/bus/simple-pm-bus.c
+@@ -38,6 +38,7 @@ static int simple_pm_bus_remove(struct platform_device *pdev)
+ 
+ static const struct of_device_id simple_pm_bus_of_match[] = {
+ 	{ .compatible = "simple-pm-bus", },
++	{ .compatible = "ti,am33xx-pwmss", },
+ 	{ /* sentinel */ }
+ };
+ MODULE_DEVICE_TABLE(of, simple_pm_bus_of_match);
+diff --git a/drivers/pwm/Kconfig b/drivers/pwm/Kconfig
+index bf0128899c09..b705790ff160 100644
+--- a/drivers/pwm/Kconfig
++++ b/drivers/pwm/Kconfig
+@@ -438,11 +438,7 @@ config  PWM_TIEHRPWM
+ config  PWM_TIPWMSS
+ 	bool
+ 	default y if (ARCH_OMAP2PLUS) && (PWM_TIECAP || PWM_TIEHRPWM)
+-	help
+-	  PWM Subsystem driver support for AM33xx SOC.
+-
+-	  PWM submodules require PWM config space access from submodule
+-	  drivers and require common parent driver support.
++	select SIMPLE_PM_BUS
+ 
+ config PWM_TWL
+ 	tristate "TWL4030/6030 PWM support"
+diff --git a/drivers/pwm/Makefile b/drivers/pwm/Makefile
+index 1194c54efcc2..9d2859ea91ce 100644
+--- a/drivers/pwm/Makefile
++++ b/drivers/pwm/Makefile
+@@ -42,7 +42,6 @@ obj-$(CONFIG_PWM_SUN4I)		+= pwm-sun4i.o
+ obj-$(CONFIG_PWM_TEGRA)		+= pwm-tegra.o
+ obj-$(CONFIG_PWM_TIECAP)	+= pwm-tiecap.o
+ obj-$(CONFIG_PWM_TIEHRPWM)	+= pwm-tiehrpwm.o
+-obj-$(CONFIG_PWM_TIPWMSS)	+= pwm-tipwmss.o
+ obj-$(CONFIG_PWM_TWL)		+= pwm-twl.o
+ obj-$(CONFIG_PWM_TWL_LED)	+= pwm-twl-led.o
+ obj-$(CONFIG_PWM_VT8500)	+= pwm-vt8500.o
+diff --git a/drivers/pwm/pwm-tipwmss.c b/drivers/pwm/pwm-tipwmss.c
+deleted file mode 100644
+index 7fa85a1604da..000000000000
+--- a/drivers/pwm/pwm-tipwmss.c
++++ /dev/null
+@@ -1,65 +0,0 @@
+-/*
+- * TI PWM Subsystem driver
+- *
+- * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+- * GNU General Public License for more details.
+- *
+- */
+-
+-#include <linux/module.h>
+-#include <linux/platform_device.h>
+-#include <linux/io.h>
+-#include <linux/err.h>
+-#include <linux/pm_runtime.h>
+-#include <linux/of_device.h>
+-
+-static const struct of_device_id pwmss_of_match[] = {
+-	{ .compatible	= "ti,am33xx-pwmss" },
+-	{},
+-};
+-MODULE_DEVICE_TABLE(of, pwmss_of_match);
+-
+-static int pwmss_probe(struct platform_device *pdev)
+-{
+-	int ret;
+-	struct device_node *node = pdev->dev.of_node;
+-
+-	pm_runtime_enable(&pdev->dev);
+-
+-	/* Populate all the child nodes here... */
+-	ret = of_platform_populate(node, NULL, NULL, &pdev->dev);
+-	if (ret)
+-		dev_err(&pdev->dev, "no child node found\n");
+-
+-	return ret;
+-}
+-
+-static int pwmss_remove(struct platform_device *pdev)
+-{
+-	pm_runtime_disable(&pdev->dev);
+-	return 0;
+-}
+-
+-static struct platform_driver pwmss_driver = {
+-	.driver	= {
+-		.name	= "pwmss",
+-		.of_match_table	= pwmss_of_match,
+-	},
+-	.probe	= pwmss_probe,
+-	.remove	= pwmss_remove,
+-};
+-
+-module_platform_driver(pwmss_driver);
+-
+-MODULE_DESCRIPTION("PWM Subsystem driver");
+-MODULE_AUTHOR("Texas Instruments");
+-MODULE_LICENSE("GPL");
+-- 
+2.11.0
+
