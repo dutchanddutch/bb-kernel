@@ -1,0 +1,30 @@
+From 650e189bf4e3c6a59cca42dab194cb7e64ebc874 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 17 Mar 2017 21:50:11 +0100
+Subject: [PATCH] HACK: suppress omap_voltage_late_init error
+
+On am335x there's a spurious error:
+omap_voltage_late_init: Voltage driver support not added
+
+This patch suppresses it, although it would be better to figure out why
+this code is being included in the first place.
+---
+ arch/arm/mach-omap2/voltage.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-omap2/voltage.c b/arch/arm/mach-omap2/voltage.c
+index cd15dbd62671..3be105241995 100644
+--- a/arch/arm/mach-omap2/voltage.c
++++ b/arch/arm/mach-omap2/voltage.c
+@@ -241,7 +241,7 @@ int __init omap_voltage_late_init(void)
+ 	struct voltagedomain *voltdm;
+ 
+ 	if (list_empty(&voltdm_list)) {
+-		pr_err("%s: Voltage driver support not added\n",
++		pr_debug("%s: Voltage driver support not added\n",
+ 			__func__);
+ 		return -EINVAL;
+ 	}
+-- 
+2.11.0
+
