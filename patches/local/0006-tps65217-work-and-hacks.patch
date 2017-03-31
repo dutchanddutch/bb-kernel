@@ -1,0 +1,445 @@
+From f60ded1c2785de08c00eaa2a81bfa1cd583d813e Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 21 Mar 2017 08:08:16 +0100
+Subject: [PATCH] tps65217 work and hacks
+
+---
+ drivers/mfd/tps65217.c                  | 98 ++++++++++++++++-----------------
+ drivers/power/supply/tps65217_charger.c | 39 ++-----------
+ drivers/regulator/tps65217-regulator.c  | 26 ++++-----
+ drivers/video/backlight/tps65217_bl.c   | 23 +++-----
+ include/linux/mfd/tps65217.h            | 25 +++++----
+ 5 files changed, 85 insertions(+), 126 deletions(-)
+
+diff --git a/drivers/mfd/tps65217.c b/drivers/mfd/tps65217.c
+index df2e7756927f..fab6d2f7bcf4 100644
+--- a/drivers/mfd/tps65217.c
++++ b/drivers/mfd/tps65217.c
+@@ -74,8 +74,7 @@ static void tps65217_irq_sync_unlock(struct irq_data *data)
+ 	struct tps65217 *tps = irq_data_get_irq_chip_data(data);
+ 	int ret;
+ 
+-	ret = tps65217_reg_write(tps, TPS65217_REG_INT, tps->irq_mask,
+-				TPS65217_PROTECT_NONE);
++	ret = tps65217_reg_write(tps, TPS65217_REG_INT, tps->irq_mask);
+ 	if (ret != 0)
+ 		dev_err(tps->dev, "Failed to sync IRQ masks\n");
+ 
+@@ -190,8 +189,7 @@ static int tps65217_irq_init(struct tps65217 *tps, int irq)
+ 	/* Mask all interrupt sources */
+ 	tps->irq_mask = (TPS65217_INT_RESERVEDM | TPS65217_INT_PBM
+ 			| TPS65217_INT_ACM | TPS65217_INT_USBM);
+-	tps65217_reg_write(tps, TPS65217_REG_INT, tps->irq_mask,
+-			TPS65217_PROTECT_NONE);
++	tps65217_reg_write(tps, TPS65217_REG_INT, tps->irq_mask);
+ 
+ 	tps->irq_domain = irq_domain_add_linear(tps->dev->of_node,
+ 		TPS65217_NUM_IRQ, &tps65217_irq_domain_ops, tps);
+@@ -232,41 +230,19 @@ EXPORT_SYMBOL_GPL(tps65217_reg_read);
+  * @tps65217: Device to write to.
+  * @reg: Register to write to.
+  * @val: Value to write.
+- * @level: Password protected level
+  */
+-int tps65217_reg_write(struct tps65217 *tps, unsigned int reg,
+-			unsigned int val, unsigned int level)
++int tps65217_reg_write(struct tps65217 *tps, unsigned int reg, unsigned int val)
+ {
+-	int ret;
+-	unsigned int xor_reg_val;
+-
+-	switch (level) {
+-	case TPS65217_PROTECT_NONE:
++	if (reg <= TPS65217_REG_PASSWORD) {
++		/* unprotected register can be written directly */
+ 		return regmap_write(tps->regmap, reg, val);
+-	case TPS65217_PROTECT_L1:
+-		xor_reg_val = reg ^ TPS65217_PASSWORD_REGS_UNLOCK;
+-		ret = regmap_write(tps->regmap, TPS65217_REG_PASSWORD,
+-							xor_reg_val);
+-		if (ret < 0)
+-			return ret;
+-
+-		return regmap_write(tps->regmap, reg, val);
+-	case TPS65217_PROTECT_L2:
+-		xor_reg_val = reg ^ TPS65217_PASSWORD_REGS_UNLOCK;
+-		ret = regmap_write(tps->regmap, TPS65217_REG_PASSWORD,
+-							xor_reg_val);
+-		if (ret < 0)
+-			return ret;
+-		ret = regmap_write(tps->regmap, reg, val);
+-		if (ret < 0)
+-			return ret;
+-		ret = regmap_write(tps->regmap, TPS65217_REG_PASSWORD,
+-							xor_reg_val);
+-		if (ret < 0)
+-			return ret;
+-		return regmap_write(tps->regmap, reg, val);
+-	default:
+-		return -EINVAL;
++	} else {
++		/* protected register requires special write sequence */
++		const struct reg_sequence regs[4] = {
++			{ TPS65217_REG_PASSWORD, reg ^ 0x7d }, { reg, val },
++			{ TPS65217_REG_PASSWORD, reg ^ 0x7d }, { reg, val },
++		};
++		return regmap_multi_reg_write(tps->regmap, regs, 4);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(tps65217_reg_write);
+@@ -280,8 +256,8 @@ EXPORT_SYMBOL_GPL(tps65217_reg_write);
+  * @val: Value to write.
+  * @level: Password protected level
+  */
+-static int tps65217_update_bits(struct tps65217 *tps, unsigned int reg,
+-		unsigned int mask, unsigned int val, unsigned int level)
++int tps65217_update_bits(struct tps65217 *tps, unsigned int reg,
++		unsigned int mask, unsigned int val)
+ {
+ 	int ret;
+ 	unsigned int data;
+@@ -295,31 +271,46 @@ static int tps65217_update_bits(struct tps65217 *tps, unsigned int reg,
+ 	data &= ~mask;
+ 	data |= val & mask;
+ 
+-	ret = tps65217_reg_write(tps, reg, data, level);
++	ret = tps65217_reg_write(tps, reg, data);
+ 	if (ret)
+ 		dev_err(tps->dev, "Write for reg 0x%x failed\n", reg);
+ 
+ 	return ret;
+ }
++EXPORT_SYMBOL_GPL(tps65217_update_bits);
+ 
+-int tps65217_set_bits(struct tps65217 *tps, unsigned int reg,
+-		unsigned int mask, unsigned int val, unsigned int level)
+-{
+-	return tps65217_update_bits(tps, reg, mask, val, level);
+-}
+-EXPORT_SYMBOL_GPL(tps65217_set_bits);
+ 
+-int tps65217_clear_bits(struct tps65217 *tps, unsigned int reg,
+-		unsigned int mask, unsigned int level)
++static bool tps65217_writeable_reg(struct device *dev, unsigned int reg)
+ {
+-	return tps65217_update_bits(tps, reg, mask, 0, level);
++	switch (reg) {
++	case TPS65217_REG_CHIPID:
++	case TPS65217_REG_CHGCONFIG0:
++	case TPS65217_REG_PGOOD:
++		return false;
++	default:
++		return true;
++	}
++}
++
++static bool tps65217_precious_reg(struct device *dev, unsigned int reg)
++{
++	switch (reg) {
++	case TPS65217_REG_INT:		/* low nibble clears on read */
++		return true;
++	default:
++		return false;
++	}
+ }
+-EXPORT_SYMBOL_GPL(tps65217_clear_bits);
+ 
+ static bool tps65217_volatile_reg(struct device *dev, unsigned int reg)
+ {
+ 	switch (reg) {
+-	case TPS65217_REG_INT:
++	case TPS65217_REG_CHGCONFIG0:
++	case TPS65217_REG_PGOOD:
++	case TPS65217_REG_STATUS:
++	case TPS65217_REG_PASSWORD:	/* clears after writing any register */
++	case TPS65217_REG_DEFSLEW:	/* due to self-clearing GO-bit */
++	case TPS65217_REG_SEQ6:		/* due to self-clearing bits */
+ 		return true;
+ 	default:
+ 		return false;
+@@ -331,7 +322,11 @@ static const struct regmap_config tps65217_regmap_config = {
+ 	.val_bits = 8,
+ 
+ 	.max_register = TPS65217_REG_MAX,
++	.writeable_reg = tps65217_writeable_reg,
+ 	.volatile_reg = tps65217_volatile_reg,
++	.precious_reg = tps65217_precious_reg,
++
++/*	.cache_type = REGCACHE_FLAT, */
+ };
+ 
+ static const struct of_device_id tps65217_of_match[] = {
+@@ -411,8 +406,7 @@ static int tps65217_probe(struct i2c_client *client,
+ 	/* Set the PMIC to shutdown on PWR_EN toggle */
+ 	if (status_off) {
+ 		ret = tps65217_set_bits(tps, TPS65217_REG_STATUS,
+-				TPS65217_STATUS_OFF, TPS65217_STATUS_OFF,
+-				TPS65217_PROTECT_NONE);
++				TPS65217_STATUS_OFF);
+ 		if (ret)
+ 			dev_warn(tps->dev, "unable to set the status OFF\n");
+ 	}
+diff --git a/drivers/power/supply/tps65217_charger.c b/drivers/power/supply/tps65217_charger.c
+index 9fd019f9b88c..872cecd38f21 100644
+--- a/drivers/power/supply/tps65217_charger.c
++++ b/drivers/power/supply/tps65217_charger.c
+@@ -56,37 +56,8 @@ static enum power_supply_property tps65217_ac_props[] = {
+ 
+ static int tps65217_config_charger(struct tps65217_charger *charger)
+ {
+-	int ret;
+-
+ 	dev_dbg(charger->dev, "%s\n", __func__);
+ 
+-	/*
+-	 * tps65217 rev. G, p. 31 (see p. 32 for NTC schematic)
+-	 *
+-	 * The device can be configured to support a 100k NTC (B = 3960) by
+-	 * setting the the NTC_TYPE bit in register CHGCONFIG1 to 1. However it
+-	 * is not recommended to do so. In sleep mode, the charger continues
+-	 * charging the battery, but all register values are reset to default
+-	 * values. Therefore, the charger would get the wrong temperature
+-	 * information. If 100k NTC setting is required, please contact the
+-	 * factory.
+-	 *
+-	 * ATTENTION, conflicting information, from p. 46
+-	 *
+-	 * NTC TYPE (for battery temperature measurement)
+-	 *   0 – 100k (curve 1, B = 3960)
+-	 *   1 – 10k  (curve 2, B = 3480) (default on reset)
+-	 *
+-	 */
+-	ret = tps65217_clear_bits(charger->tps, TPS65217_REG_CHGCONFIG1,
+-				  TPS65217_CHGCONFIG1_NTC_TYPE,
+-				  TPS65217_PROTECT_NONE);
+-	if (ret) {
+-		dev_err(charger->dev,
+-			"failed to set 100k NTC setting: %d\n", ret);
+-		return ret;
+-	}
+-
+ 	return 0;
+ }
+ 
+@@ -100,9 +71,7 @@ static int tps65217_enable_charging(struct tps65217_charger *charger)
+ 
+ 	dev_dbg(charger->dev, "%s: enable charging\n", __func__);
+ 	ret = tps65217_set_bits(charger->tps, TPS65217_REG_CHGCONFIG1,
+-				TPS65217_CHGCONFIG1_CHG_EN,
+-				TPS65217_CHGCONFIG1_CHG_EN,
+-				TPS65217_PROTECT_NONE);
++				TPS65217_CHGCONFIG1_CHG_EN);
+ 	if (ret) {
+ 		dev_err(charger->dev,
+ 			"%s: Error in writing CHG_EN in reg 0x%x: %d\n",
+@@ -121,11 +90,13 @@ static int tps65217_ac_get_property(struct power_supply *psy,
+ {
+ 	struct tps65217_charger *charger = power_supply_get_drvdata(psy);
+ 
+-	if (psp == POWER_SUPPLY_PROP_ONLINE) {
++	switch (psp) {
++	case POWER_SUPPLY_PROP_ONLINE:
+ 		val->intval = charger->ac_online;
+ 		return 0;
++	default:
++		return -EINVAL;
+ 	}
+-	return -EINVAL;
+ }
+ 
+ static irqreturn_t tps65217_charger_irq(int irq, void *dev)
+diff --git a/drivers/regulator/tps65217-regulator.c b/drivers/regulator/tps65217-regulator.c
+index 2d12b9af3540..7bc6b950aed1 100644
+--- a/drivers/regulator/tps65217-regulator.c
++++ b/drivers/regulator/tps65217-regulator.c
+@@ -78,10 +78,9 @@ static int tps65217_pmic_enable(struct regulator_dev *dev)
+ 	if (rid < TPS65217_DCDC_1 || rid > TPS65217_LDO_4)
+ 		return -EINVAL;
+ 
+-	/* Enable the regulator and password protection is level 1 */
++	/* Enable the regulator */
+ 	return tps65217_set_bits(tps, TPS65217_REG_ENABLE,
+-				 dev->desc->enable_mask, dev->desc->enable_mask,
+-				 TPS65217_PROTECT_L1);
++				 dev->desc->enable_mask);
+ }
+ 
+ static int tps65217_pmic_disable(struct regulator_dev *dev)
+@@ -92,9 +91,9 @@ static int tps65217_pmic_disable(struct regulator_dev *dev)
+ 	if (rid < TPS65217_DCDC_1 || rid > TPS65217_LDO_4)
+ 		return -EINVAL;
+ 
+-	/* Disable the regulator and password protection is level 1 */
++	/* Disable the regulator */
+ 	return tps65217_clear_bits(tps, TPS65217_REG_ENABLE,
+-				   dev->desc->enable_mask, TPS65217_PROTECT_L1);
++				   dev->desc->enable_mask);
+ }
+ 
+ static int tps65217_pmic_set_voltage_sel(struct regulator_dev *dev,
+@@ -104,16 +103,15 @@ static int tps65217_pmic_set_voltage_sel(struct regulator_dev *dev,
+ 	struct tps65217 *tps = rdev_get_drvdata(dev);
+ 	unsigned int rid = rdev_get_id(dev);
+ 
+-	/* Set the voltage based on vsel value and write protect level is 2 */
+-	ret = tps65217_set_bits(tps, dev->desc->vsel_reg, dev->desc->vsel_mask,
+-				selector, TPS65217_PROTECT_L2);
++	/* Set the voltage based on vsel value */
++	ret = tps65217_update_bits(tps, dev->desc->vsel_reg,
++				   dev->desc->vsel_mask, selector);
+ 
+ 	/* Set GO bit for DCDCx to initiate voltage transistion */
+ 	switch (rid) {
+ 	case TPS65217_DCDC_1 ... TPS65217_DCDC_3:
+ 		ret = tps65217_set_bits(tps, TPS65217_REG_DEFSLEW,
+-				       TPS65217_DEFSLEW_GO, TPS65217_DEFSLEW_GO,
+-				       TPS65217_PROTECT_L2);
++					TPS65217_DEFSLEW_GO);
+ 		break;
+ 	}
+ 
+@@ -129,8 +127,7 @@ static int tps65217_pmic_set_suspend_enable(struct regulator_dev *dev)
+ 		return -EINVAL;
+ 
+ 	return tps65217_clear_bits(tps, dev->desc->bypass_reg,
+-				   dev->desc->bypass_mask,
+-				   TPS65217_PROTECT_L1);
++				   dev->desc->bypass_mask);
+ }
+ 
+ static int tps65217_pmic_set_suspend_disable(struct regulator_dev *dev)
+@@ -144,9 +141,8 @@ static int tps65217_pmic_set_suspend_disable(struct regulator_dev *dev)
+ 	if (!tps->strobes[rid])
+ 		return -EINVAL;
+ 
+-	return tps65217_set_bits(tps, dev->desc->bypass_reg,
+-				 dev->desc->bypass_mask,
+-				 tps->strobes[rid], TPS65217_PROTECT_L1);
++	return tps65217_update_bits(tps, dev->desc->bypass_reg,
++				    dev->desc->bypass_mask, tps->strobes[rid]);
+ }
+ 
+ /* Operations permitted on DCDCx, LDO2, LDO3 and LDO4 */
+diff --git a/drivers/video/backlight/tps65217_bl.c b/drivers/video/backlight/tps65217_bl.c
+index fd524ad860a5..3feba676c86e 100644
+--- a/drivers/video/backlight/tps65217_bl.c
++++ b/drivers/video/backlight/tps65217_bl.c
+@@ -37,8 +37,7 @@ static int tps65217_bl_enable(struct tps65217_bl *tps65217_bl)
+ 	int rc;
+ 
+ 	rc = tps65217_set_bits(tps65217_bl->tps, TPS65217_REG_WLEDCTRL1,
+-			TPS65217_WLEDCTRL1_ISINK_ENABLE,
+-			TPS65217_WLEDCTRL1_ISINK_ENABLE, TPS65217_PROTECT_NONE);
++			TPS65217_WLEDCTRL1_ISINK_ENABLE);
+ 	if (rc) {
+ 		dev_err(tps65217_bl->dev,
+ 			"failed to enable backlight: %d\n", rc);
+@@ -56,10 +55,8 @@ static int tps65217_bl_disable(struct tps65217_bl *tps65217_bl)
+ {
+ 	int rc;
+ 
+-	rc = tps65217_clear_bits(tps65217_bl->tps,
+-				TPS65217_REG_WLEDCTRL1,
+-				TPS65217_WLEDCTRL1_ISINK_ENABLE,
+-				TPS65217_PROTECT_NONE);
++	rc = tps65217_clear_bits(tps65217_bl->tps, TPS65217_REG_WLEDCTRL1,
++			TPS65217_WLEDCTRL1_ISINK_ENABLE);
+ 	if (rc) {
+ 		dev_err(tps65217_bl->dev,
+ 			"failed to disable backlight: %d\n", rc);
+@@ -90,8 +87,7 @@ static int tps65217_bl_update_status(struct backlight_device *bl)
+ 	if (brightness > 0) {
+ 		rc = tps65217_reg_write(tps65217_bl->tps,
+ 					TPS65217_REG_WLEDCTRL2,
+-					brightness - 1,
+-					TPS65217_PROTECT_NONE);
++					brightness - 1);
+ 		if (rc) {
+ 			dev_err(tps65217_bl->dev,
+ 				"failed to set brightness level: %d\n", rc);
+@@ -128,8 +124,7 @@ static int tps65217_bl_hw_init(struct tps65217_bl *tps65217_bl,
+ 		/* select ISET_1 current level */
+ 		rc = tps65217_clear_bits(tps65217_bl->tps,
+ 					TPS65217_REG_WLEDCTRL1,
+-					TPS65217_WLEDCTRL1_ISEL,
+-					TPS65217_PROTECT_NONE);
++					TPS65217_WLEDCTRL1_ISEL);
+ 		if (rc) {
+ 			dev_err(tps65217_bl->dev,
+ 				"failed to select ISET1 current level: %d)\n",
+@@ -144,8 +139,7 @@ static int tps65217_bl_hw_init(struct tps65217_bl *tps65217_bl,
+ 	case TPS65217_BL_ISET2:
+ 		/* select ISET2 current level */
+ 		rc = tps65217_set_bits(tps65217_bl->tps, TPS65217_REG_WLEDCTRL1,
+-				TPS65217_WLEDCTRL1_ISEL,
+-				TPS65217_WLEDCTRL1_ISEL, TPS65217_PROTECT_NONE);
++				TPS65217_WLEDCTRL1_ISEL);
+ 		if (rc) {
+ 			dev_err(tps65217_bl->dev,
+ 				"failed to select ISET2 current level: %d\n",
+@@ -164,11 +158,10 @@ static int tps65217_bl_hw_init(struct tps65217_bl *tps65217_bl,
+ 	}
+ 
+ 	/* set PWM frequency */
+-	rc = tps65217_set_bits(tps65217_bl->tps,
++	rc = tps65217_update_bits(tps65217_bl->tps,
+ 			TPS65217_REG_WLEDCTRL1,
+ 			TPS65217_WLEDCTRL1_FDIM_MASK,
+-			pdata->fdim,
+-			TPS65217_PROTECT_NONE);
++			pdata->fdim);
+ 	if (rc) {
+ 		dev_err(tps65217_bl->dev,
+ 			"failed to select PWM dimming frequency: %d\n",
+diff --git a/include/linux/mfd/tps65217.h b/include/linux/mfd/tps65217.h
+index 3cbec4b2496a..886bae095a96 100644
+--- a/include/linux/mfd/tps65217.h
++++ b/include/linux/mfd/tps65217.h
+@@ -121,8 +121,6 @@
+ #define TPS65217_STATUS_USBPWR		BIT(2)
+ #define TPS65217_STATUS_PB		BIT(0)
+ 
+-#define TPS65217_PASSWORD_REGS_UNLOCK	0x7D
+-
+ #define TPS65217_PGOOD_LDO3_PG		BIT(6)
+ #define TPS65217_PGOOD_LDO4_PG		BIT(5)
+ #define TPS65217_PGOOD_DC1_PG		BIT(4)
+@@ -190,9 +188,6 @@
+ #define TPS65217_SEQ6_INSTDWN		BIT(0)
+ 
+ #define TPS65217_MAX_REGISTER		0x1E
+-#define TPS65217_PROTECT_NONE		0
+-#define TPS65217_PROTECT_L1		1
+-#define TPS65217_PROTECT_L2		2
+ 
+ 
+ enum tps65217_regulator_id {
+@@ -284,10 +279,20 @@ static inline unsigned long tps65217_chip_id(struct tps65217 *tps65217)
+ int tps65217_reg_read(struct tps65217 *tps, unsigned int reg,
+ 					unsigned int *val);
+ int tps65217_reg_write(struct tps65217 *tps, unsigned int reg,
+-			unsigned int val, unsigned int level);
+-int tps65217_set_bits(struct tps65217 *tps, unsigned int reg,
+-		unsigned int mask, unsigned int val, unsigned int level);
+-int tps65217_clear_bits(struct tps65217 *tps, unsigned int reg,
+-		unsigned int mask, unsigned int level);
++			unsigned int val);
++int tps65217_update_bits(struct tps65217 *tps, unsigned int reg,
++		unsigned int mask, unsigned int val);
++
++static inline int tps65217_set_bits(struct tps65217 *tps, unsigned int reg,
++		unsigned int mask)
++{
++	return tps65217_update_bits(tps, reg, mask, mask);
++}
++
++static inline int tps65217_clear_bits(struct tps65217 *tps, unsigned int reg,
++		unsigned int mask)
++{
++	return tps65217_update_bits(tps, reg, mask, 0);
++}
+ 
+ #endif /*  __LINUX_MFD_TPS65217_H */
+-- 
+2.11.0
+
