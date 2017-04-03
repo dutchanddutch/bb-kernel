@@ -1,0 +1,104 @@
+From 5c682553ce69d85e04da7dea1f0b12b1772e28f8 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Mon, 3 Apr 2017 02:34:51 +0200
+Subject: [PATCH] HACK: hardcode raid6 and xor impl to use
+
+---
+ arch/arm/include/asm/xor.h |  2 ++
+ lib/raid6/Makefile         |  9 ++++++---
+ lib/raid6/algos.c          | 15 ++++++++++++---
+ lib/raid6/neon.c           |  6 +++---
+ 4 files changed, 23 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
+index 4ffb26d4cad8..ba6fc8f7116b 100644
+--- a/arch/arm/include/asm/xor.h
++++ b/arch/arm/include/asm/xor.h
+@@ -209,6 +209,8 @@ static struct xor_block_template xor_block_neon = {
+ 
+ #define NEON_TEMPLATES	\
+ 	do { if (cpu_has_neon()) xor_speed(&xor_block_neon); } while (0)
++#define XOR_SELECT_TEMPLATE(FASTEST) \
++	(cpu_has_neon() ? &xor_block_neon : &xor_block_arm4regs)
+ #else
+ #define NEON_TEMPLATES
+ #endif
+diff --git a/lib/raid6/Makefile b/lib/raid6/Makefile
+index 3057011f5599..97a3ea4642d2 100644
+--- a/lib/raid6/Makefile
++++ b/lib/raid6/Makefile
+@@ -1,11 +1,14 @@
+ obj-$(CONFIG_RAID6_PQ)	+= raid6_pq.o
+ 
+-raid6_pq-y	+= algos.o recov.o tables.o int1.o int2.o int4.o \
+-		   int8.o int16.o int32.o
++raid6_pq-y	+= algos.o recov.o tables.o
++ifneq ($(CONFIG_KERNEL_MODE_NEON),y)
++raid6_pq-y	+= int1.o int2.o int4.o int8.o int16.o int32.o
++endif
+ 
+ raid6_pq-$(CONFIG_X86) += recov_ssse3.o recov_avx2.o mmx.o sse1.o sse2.o avx2.o avx512.o recov_avx512.o
+ raid6_pq-$(CONFIG_ALTIVEC) += altivec1.o altivec2.o altivec4.o altivec8.o
+-raid6_pq-$(CONFIG_KERNEL_MODE_NEON) += neon.o neon1.o neon2.o neon4.o neon8.o
++raid6_pq-$(CONFIG_KERNEL_MODE_NEON) += neon.o neon2.o
++#raid6_pq-$(CONFIG_KERNEL_MODE_NEON) += neon.o neon1.o neon2.o neon4.o neon8.o
+ raid6_pq-$(CONFIG_TILEGX) += tilegx8.o
+ raid6_pq-$(CONFIG_S390) += s390vx8.o recov_s390xc.o
+ 
+diff --git a/lib/raid6/algos.c b/lib/raid6/algos.c
+index 7857049fd7d3..98148b55932b 100644
+--- a/lib/raid6/algos.c
++++ b/lib/raid6/algos.c
+@@ -81,15 +81,17 @@ const struct raid6_calls * const raid6_algos[] = {
+ #if defined(CONFIG_S390)
+ 	&raid6_s390vx8,
+ #endif
++#ifndef CONFIG_KERNEL_MODE_NEON
+ 	&raid6_intx1,
+ 	&raid6_intx2,
+ 	&raid6_intx4,
+ 	&raid6_intx8,
++#endif
+ #ifdef CONFIG_KERNEL_MODE_NEON
+-	&raid6_neonx1,
++//	&raid6_neonx1,
+ 	&raid6_neonx2,
+-	&raid6_neonx4,
+-	&raid6_neonx8,
++//	&raid6_neonx4,
++//	&raid6_neonx8,
+ #endif
+ 	NULL
+ };
+@@ -159,6 +161,13 @@ static inline const struct raid6_calls *raid6_choose_gen(
+ 			if ((*algo)->valid && !(*algo)->valid())
+ 				continue;
+ 
++			if (!best && !algo[1]) {
++				/* only candidate, skip benchmark */
++				best = *algo;
++				raid6_call = *best;
++				return best;
++			}
++
+ 			perf = 0;
+ 
+ 			preempt_disable();
+diff --git a/lib/raid6/neon.c b/lib/raid6/neon.c
+index 7076ef1ba3dd..e0eea1e87a16 100644
+--- a/lib/raid6/neon.c
++++ b/lib/raid6/neon.c
+@@ -64,7 +64,7 @@ static int raid6_have_neon(void)
+ 	return cpu_has_neon();
+ }
+ 
+-RAID6_NEON_WRAPPER(1);
++//RAID6_NEON_WRAPPER(1);
+ RAID6_NEON_WRAPPER(2);
+-RAID6_NEON_WRAPPER(4);
+-RAID6_NEON_WRAPPER(8);
++//RAID6_NEON_WRAPPER(4);
++//RAID6_NEON_WRAPPER(8);
+-- 
+2.11.0
+
