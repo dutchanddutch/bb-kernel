@@ -6,9 +6,9 @@ Subject: [PATCH] WiP trying to achieve fast link up at boot
 The phy already has been reset superfluously by u-boot and probably has
 link up already.  Try to actually use that!
 ---
- drivers/net/ethernet/ti/davinci_mdio.c |  8 ++++++++
+ drivers/net/ethernet/ti/davinci_mdio.c |  7 +++++++
  drivers/net/phy/phy.c                  |  2 +-
- drivers/net/phy/phy_device.c           |  7 ++++++-
+ drivers/net/phy/phy_device.c           |  1 +
  drivers/net/phy/smsc.c                 | 28 ++++++++++++++++++++++++++++
  4 files changed, 43 insertions(+), 2 deletions(-)
 
@@ -28,12 +28,11 @@ index 425856f307e4..53f62c3480a3 100644
  	pm_runtime_mark_last_busy(data->dev);
  	pm_runtime_put_autosuspend(data->dev);
  	return ret;
-@@ -296,6 +301,9 @@ static int davinci_mdio_write(struct mii_bus *bus, int phy_id,
+@@ -296,6 +301,8 @@ static int davinci_mdio_write(struct mii_bus *bus, int phy_id,
  	if (phy_reg & ~PHY_REG_MASK || phy_id & ~PHY_ID_MASK)
  		return -EINVAL;
  
 +	dev_dbg( data->dev, "reg %d write 0x%04x\n", phy_reg, phy_data );
-+	WARN_ON( phy_reg == 0 && (phy_data & 0x8200) );
 +
  	ret = pm_runtime_get_sync(data->dev);
  	if (ret < 0) {
@@ -63,27 +62,6 @@ index c4ceb082e970..19b9e26bd333 100644
  		err = phy_write(phydev, MII_ADVERTISE, adv);
  
  		if (err < 0)
-@@ -1164,6 +1165,8 @@ int genphy_restart_aneg(struct phy_device *phydev)
- 	if (ctl < 0)
- 		return ctl;
- 
-+	WARN_ON(1);
-+
- 	ctl |= BMCR_ANENABLE | BMCR_ANRESTART;
- 
- 	/* Don't isolate the PHY if we're negotiating */
-@@ -1207,8 +1210,10 @@ int genphy_config_aneg(struct phy_device *phydev)
- 	/* Only restart aneg if we are advertising something different
- 	 * than we were before.
- 	 */
--	if (result > 0)
-+	if (result > 0) {
- 		result = genphy_restart_aneg(phydev);
-+		asm("" : "+r"(result));
-+	}
- 
- 	return result;
- }
 diff --git a/drivers/net/phy/smsc.c b/drivers/net/phy/smsc.c
 index b62c4aaee40b..211fa6afea38 100644
 --- a/drivers/net/phy/smsc.c
