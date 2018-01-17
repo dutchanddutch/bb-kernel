@@ -71,14 +71,13 @@ index 3c575cd07888..c2920e79c763 100755
  Architecture: any
  Description: User Mode Linux kernel, version $version
   User-mode Linux is a port of the Linux kernel to its own system call
-@@ -313,9 +320,9 @@ else
+@@ -313,9 +320,8 @@ else
  	cat <<EOF >> debian/control
  
  Package: $packagename
 -Provides: linux-image, linux-image-2.6, linux-modules-$version
  Suggests: $fwpackagename
  Architecture: any
-+Depends: initramfs-tools
  Description: Linux kernel, version $version
   This package contains the Linux kernel, modules and corresponding other
   files, version: $version.
