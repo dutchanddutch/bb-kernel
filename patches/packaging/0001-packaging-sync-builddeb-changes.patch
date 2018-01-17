@@ -125,13 +125,12 @@ index e15159d0a884..65837b889516 100755
  	fi
  fi
  
-@@ -303,7 +315,9 @@ else
+@@ -303,7 +315,8 @@ else
  	cat <<EOF >> debian/control
  
  Package: $packagename
 +Suggests: $fwpackagename
  Architecture: any
-+Depends: initramfs-tools
  Description: Linux kernel, version $version
   This package contains the Linux kernel, modules and corresponding other
   files, version: $version.
