@@ -1,0 +1,25 @@
+From 74aacd56e2e8ee35b889f8cf78b85938e31fad56 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 8 Nov 2017 13:37:06 +0100
+Subject: [PATCH 8/9] ptp: cpts: initialize to raw monotonic time
+
+---
+ drivers/net/ethernet/ti/cpts.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index 85a55b4ff8c0..e08ff12a72ea 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -384,7 +384,7 @@ int cpts_register(struct device *dev, struct cpts *cpts,
+ 	cpts_write32(cpts, TS_PEND_EN, int_enable);
+ 
+ 	spin_lock_irqsave(&cpts->lock, flags);
+-	timecounter_init(&cpts->tc, &cpts->cc, ktime_to_ns(ktime_get_real()));
++	timecounter_init(&cpts->tc, &cpts->cc, ktime_to_ns(ktime_get_raw()));
+ 	spin_unlock_irqrestore(&cpts->lock, flags);
+ 
+ 	INIT_DELAYED_WORK(&cpts->overflow_work, cpts_overflow_check);
+-- 
+2.11.0
+
