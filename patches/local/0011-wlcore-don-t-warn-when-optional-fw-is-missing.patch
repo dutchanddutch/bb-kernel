@@ -1,0 +1,26 @@
+From e3e25de4c50b6af7c3b67db765b3f56f2d3fe741 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 24 Jan 2018 14:06:24 +0100
+Subject: [PATCH 11/11] wlcore: don't warn when optional fw is missing
+
+---
+ drivers/net/wireless/ti/wlcore/main.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ti/wlcore/main.c b/drivers/net/wireless/ti/wlcore/main.c
+index 867d5245716d..7cf9dd680e3b 100644
+--- a/drivers/net/wireless/ti/wlcore/main.c
++++ b/drivers/net/wireless/ti/wlcore/main.c
+@@ -6521,7 +6521,8 @@ int wlcore_probe(struct wl1271 *wl, struct platform_device *pdev)
+ 	wl->pdev = pdev;
+ 	platform_set_drvdata(pdev, wl);
+ 
+-	ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
++	ret = request_firmware_nowait(THIS_MODULE,
++				      FW_OPT_UEVENT | FW_OPT_NO_WARN,
+ 				      WL12XX_NVS_NAME, &pdev->dev, GFP_KERNEL,
+ 				      wl, wlcore_nvs_cb);
+ 	if (ret < 0) {
+-- 
+2.11.0
+

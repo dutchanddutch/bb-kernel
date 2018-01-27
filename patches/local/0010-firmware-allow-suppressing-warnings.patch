@@ -1,0 +1,131 @@
+From 1cdc53160f9e0c703d7675a704ce9ab64bda3b58 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 24 Jan 2018 14:05:39 +0100
+Subject: [PATCH 10/11] firmware: allow suppressing warnings
+
+---
+ drivers/base/firmware_class.c | 33 ++++++++++++---------------------
+ include/linux/firmware.h      | 22 +++++++++++++++++++---
+ 2 files changed, 31 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index a95e1e572697..17882cdc8c28 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -104,22 +104,6 @@ static inline long firmware_loading_timeout(void)
+ 	return loading_timeout > 0 ? loading_timeout * HZ : MAX_JIFFY_OFFSET;
+ }
+ 
+-/* firmware behavior options */
+-#define FW_OPT_UEVENT	(1U << 0)
+-#define FW_OPT_NOWAIT	(1U << 1)
+-#ifdef CONFIG_FW_LOADER_USER_HELPER
+-#define FW_OPT_USERHELPER	(1U << 2)
+-#else
+-#define FW_OPT_USERHELPER	0
+-#endif
+-#ifdef CONFIG_FW_LOADER_USER_HELPER_FALLBACK
+-#define FW_OPT_FALLBACK		FW_OPT_USERHELPER
+-#else
+-#define FW_OPT_FALLBACK		0
+-#endif
+-#define FW_OPT_NO_WARN	(1U << 3)
+-#define FW_OPT_NOCACHE	(1U << 4)
+-
+ struct firmware_cache {
+ 	/* firmware_buf instance will be added into the below list */
+ 	spinlock_t lock;
+@@ -1332,8 +1316,9 @@ static void request_firmware_work_func(struct work_struct *work)
+ /**
+  * request_firmware_nowait - asynchronous version of request_firmware
+  * @module: module requesting the firmware
+- * @uevent: sends uevent to copy the firmware image if this flag
+- *	is non-zero else the firmware copy must be done manually.
++ * @opt_flags: sends uevent to copy the firmware image if FW_OPT_UEVENT
++ *	is set else the firmware copy must be done manually.  suppress
++ *	warnings if FW_OPT_NO_WARN is set.
+  * @name: name of firmware file
+  * @device: device for which firmware is being loaded
+  * @gfp: allocation flags
+@@ -1354,12 +1339,19 @@ static void request_firmware_work_func(struct work_struct *work)
+  **/
+ int
+ request_firmware_nowait(
+-	struct module *module, bool uevent,
++	struct module *module, unsigned int opt_flags,
+ 	const char *name, struct device *device, gfp_t gfp, void *context,
+ 	void (*cont)(const struct firmware *fw, void *context))
+ {
+ 	struct firmware_work *fw_work;
+ 
++	if (WARN_ON(opt_flags & ~(FW_OPT_UEVENT | FW_OPT_NO_WARN)))
++		opt_flags = FW_OPT_UEVENT;
++
++	opt_flags |= FW_OPT_NOWAIT | FW_OPT_FALLBACK;
++	if (!(opt_flags & FW_OPT_UEVENT))
++		opt_flags |= FW_OPT_USERHELPER;
++
+ 	fw_work = kzalloc(sizeof(struct firmware_work), gfp);
+ 	if (!fw_work)
+ 		return -ENOMEM;
+@@ -1373,8 +1365,7 @@ request_firmware_nowait(
+ 	fw_work->device = device;
+ 	fw_work->context = context;
+ 	fw_work->cont = cont;
+-	fw_work->opt_flags = FW_OPT_NOWAIT | FW_OPT_FALLBACK |
+-		(uevent ? FW_OPT_UEVENT : FW_OPT_USERHELPER);
++	fw_work->opt_flags = opt_flags;
+ 
+ 	if (!try_module_get(module)) {
+ 		kfree_const(fw_work->name);
+diff --git a/include/linux/firmware.h b/include/linux/firmware.h
+index b1f9f0ccb8ac..f7bde57e9e2f 100644
+--- a/include/linux/firmware.h
++++ b/include/linux/firmware.h
+@@ -5,8 +5,24 @@
+ #include <linux/compiler.h>
+ #include <linux/gfp.h>
+ 
++/* firmware behavior options */
++#define FW_OPT_UEVENT	(1U << 0)
++#define FW_OPT_NOWAIT	(1U << 1)
++#ifdef CONFIG_FW_LOADER_USER_HELPER
++#define FW_OPT_USERHELPER	(1U << 2)
++#else
++#define FW_OPT_USERHELPER	0
++#endif
++#ifdef CONFIG_FW_LOADER_USER_HELPER_FALLBACK
++#define FW_OPT_FALLBACK		FW_OPT_USERHELPER
++#else
++#define FW_OPT_FALLBACK		0
++#endif
++#define FW_OPT_NO_WARN	(1U << 3)
++#define FW_OPT_NOCACHE	(1U << 4)
++
+ #define FW_ACTION_NOHOTPLUG 0
+-#define FW_ACTION_HOTPLUG 1
++#define FW_ACTION_HOTPLUG FW_OPT_UEVENT
+ 
+ struct firmware {
+ 	size_t size;
+@@ -42,7 +58,7 @@ struct builtin_fw {
+ int request_firmware(const struct firmware **fw, const char *name,
+ 		     struct device *device);
+ int request_firmware_nowait(
+-	struct module *module, bool uevent,
++	struct module *module, unsigned int opt_flags,
+ 	const char *name, struct device *device, gfp_t gfp, void *context,
+ 	void (*cont)(const struct firmware *fw, void *context));
+ int request_firmware_direct(const struct firmware **fw, const char *name,
+@@ -59,7 +75,7 @@ static inline int request_firmware(const struct firmware **fw,
+ 	return -EINVAL;
+ }
+ static inline int request_firmware_nowait(
+-	struct module *module, bool uevent,
++	struct module *module, unsigned int opt_flags,
+ 	const char *name, struct device *device, gfp_t gfp, void *context,
+ 	void (*cont)(const struct firmware *fw, void *context))
+ {
+-- 
+2.11.0
+
