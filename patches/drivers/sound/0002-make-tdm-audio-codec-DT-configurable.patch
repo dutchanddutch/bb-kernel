@@ -1,27 +1,14 @@
-From d3998268f553b019fa210bce7fe834ec0c547d7c Mon Sep 17 00:00:00 2001
+From a66078f416506c921cc316eb474818cefd71a49a Mon Sep 17 00:00:00 2001
 From: Matthijs van Duin <matthijsvanduin@gmail.com>
 Date: Fri, 23 Dec 2016 01:00:23 +0100
-Subject: [PATCH 2/2] make tdm-audio codec DT-configurable
+Subject: [PATCH] make tdm-audio codec DT-configurable
 
 ---
- sound/core/pcm_native.c |   1 +
- sound/soc/codecs/tdm.c  | 181 ++++++++++++++++++++++++++++++++++--------------
- 2 files changed, 131 insertions(+), 51 deletions(-)
+ sound/soc/codecs/tdm.c | 164 ++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 113 insertions(+), 51 deletions(-)
 
-diff --git a/sound/core/pcm_native.c b/sound/core/pcm_native.c
-index 499f75b18e09..c73a589d67f9 100644
---- a/sound/core/pcm_native.c
-+++ b/sound/core/pcm_native.c
-@@ -2105,6 +2105,7 @@ const struct snd_pcm_hw_constraint_list snd_pcm_known_rates = {
- 	.count = ARRAY_SIZE(rates),
- 	.list = rates,
- };
-+EXPORT_SYMBOL_GPL(snd_pcm_known_rates);
- 
- static int snd_pcm_hw_rule_rate(struct snd_pcm_hw_params *params,
- 				struct snd_pcm_hw_rule *rule)
 diff --git a/sound/soc/codecs/tdm.c b/sound/soc/codecs/tdm.c
-index b8fb3b8d0177..520c9dc75415 100644
+index b8fb3b8d0177..0b9b24d5d344 100644
 --- a/sound/soc/codecs/tdm.c
 +++ b/sound/soc/codecs/tdm.c
 @@ -7,8 +7,6 @@
@@ -33,7 +20,7 @@ index b8fb3b8d0177..520c9dc75415 100644
   */
  
  #include <linux/module.h>
-@@ -21,64 +19,145 @@
+@@ -21,64 +19,128 @@
  
  #define DRV_NAME "tdm-audio"
  
@@ -79,9 +66,14 @@ index b8fb3b8d0177..520c9dc75415 100644
 -	{ "Sink", NULL, "Playback" },
 -	{ "Capture", NULL, "Source" },
 -};
-+static bool tdm_lookup_rate(u32 *index, u32 rate)
++static int tdm_audio_parse_stream(struct device *dev,
++		struct snd_soc_pcm_stream *stream, struct device_node *np)
 +{
-+	unsigned int i;
++	int res;
++	struct property *prop;
++	const __be32 *p;
++	u32 u;
++	unsigned int rate_bit;
  
 -static struct snd_soc_codec_driver soc_codec_tdm_audio = {
 -	.component_driver = {
@@ -91,10 +83,7 @@ index b8fb3b8d0177..520c9dc75415 100644
 -		.num_dapm_routes	= ARRAY_SIZE(tdm_audio_routes),
 -	},
 -};
-+	if (rate <= 31) {
-+		*index = rate;
-+		return true;
-+	}
++	of_property_read_string(np, "stream-name", &stream->stream_name);
  
 -static struct snd_soc_dai_driver tdm_audio_dai = {
 -	.name		= "tdm_audio",
@@ -113,26 +102,6 @@ index b8fb3b8d0177..520c9dc75415 100644
 -		.formats	= TDM_FORMATS,
 -	},
 -};
-+	for (i = 0; i < snd_pcm_known_rates.count; i++) {
-+		if (snd_pcm_known_rates.list[i] == rate) {
-+			*index = i;
-+			return true;
-+		}
-+	}
-+
-+	return false;
-+}
-+
-+static int tdm_audio_parse_stream(struct device *dev,
-+		struct snd_soc_pcm_stream *stream, struct device_node *np)
-+{
-+	int res;
-+	struct property *prop;
-+	const __be32 *p;
-+	u32 u;
-+
-+	of_property_read_string(np, "stream-name", &stream->stream_name);
-+
 +	res = of_property_read_variable_u32_array(np, "channels",
 +			&stream->channels_min, 1, 2);
 +	if (res < 0) {
@@ -143,8 +112,9 @@ index b8fb3b8d0177..520c9dc75415 100644
 +		stream->channels_max = stream->channels_min;
 +
 +	of_property_for_each_u32(np, "rates", prop, p, u) {
-+		if (tdm_lookup_rate(&u, u))
-+			stream->rates |= 1ULL << u;
++		rate_bit = snd_pcm_rate_to_rate_bit(u);
++		if (rate_bit != SNDRV_PCM_RATE_KNOT)
++			stream->rates |= rate_bit;
 +		else
 +			dev_warn(dev, "skipping invalid rate: %u\n", u);
 +	}
