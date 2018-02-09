@@ -1,0 +1,24 @@
+From bafb5e72f7ea4e009155ce3651e3d6dfce0939fe Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 9 Feb 2018 16:50:44 +0100
+Subject: [PATCH] HACK: make sure drm_legacy_mmap is available for sgx
+
+---
+ drivers/gpu/drm/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/Kconfig b/drivers/gpu/drm/Kconfig
+index 83cb2a88c204..fb969c400a6a 100644
+--- a/drivers/gpu/drm/Kconfig
++++ b/drivers/gpu/drm/Kconfig
+@@ -148,6 +148,7 @@ config DRM_KMS_CMA_HELPER
+ config DRM_VM
+ 	bool
+ 	depends on DRM && MMU
++	default y
+ 
+ source "drivers/gpu/drm/i2c/Kconfig"
+ 
+-- 
+2.15.1
+

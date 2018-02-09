@@ -457,6 +457,7 @@ drivers () {
 	dir 'drivers/ti/tsc'
 	dir 'drivers/ti/uio'
 	dir 'drivers/ti/gpio'
+	dir 'drivers/ti/sgx'
 }
 
 soc () {
@@ -536,34 +537,12 @@ beaglebone () {
 	fi
 }
 
-sgx () {
-	echo "dir: sgx"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		start_cleanup
-	fi
-
-	${git} "${DIR}/patches/sgx/0001-HACK-drm-fb_helper-enable-panning-support.patch"
-	${git} "${DIR}/patches/sgx/0002-HACK-drm-tilcdc-add-vsync-callback-for-use-in-omaplf.patch"
-	${git} "${DIR}/patches/sgx/0003-ARM-OMAP2-Use-pdata-quirks-for-sgx-deassert_hardrese.patch"
-	${git} "${DIR}/patches/sgx/0004-ARM-dts-am33xx-add-DT-node-for-gpu.patch"
-	${git} "${DIR}/patches/sgx/0005-Revert-ARM-reduce-visibility-of-dmac_-functions.patch"
-	${git} "${DIR}/patches/sgx/0006-arm-Export-cache-flush-management-symbols-when-MULTI.patch"
-
-	if [ "x${regenerate}" = "xenable" ] ; then
-		wdir="sgx"
-		number=6
-		cleanup
-	fi
-}
-
 ###
 #backports
 reverts
 drivers
 soc
 beaglebone
-sgx
 
 packaging () {
 	echo "dir: packaging"

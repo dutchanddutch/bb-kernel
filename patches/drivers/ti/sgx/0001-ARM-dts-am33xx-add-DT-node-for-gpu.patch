@@ -1,0 +1,137 @@
+From 589f6d0b540129c11073d69da69b12b3ad89a006 Mon Sep 17 00:00:00 2001
+From: Darren Etheridge <detheridge@ti.com>
+Date: Wed, 2 Sep 2015 16:36:39 -0400
+Subject: [PATCH] ARM: dts: am33xx: add DT node for gpu
+
+Add the node into the am33xx.dtsi file for the SGX GPU.
+
+Note: The SGX is disabled by default because it is an optional module
+and only some AM335x variants contain this module, such as AM3358 and
+AM3357.  The status should be overwritten as "OK" at the corresponding
+board.dts
+
+Signed-off-by: Darren Etheridge <detheridge@ti.com>
+Signed-off-by: Eric Ruei <e-ruei1@ti.com>
+Signed-off-by: Jyri Sarha <jsarha@ti.com>
+---
+ arch/arm/boot/dts/am335x-bone.dts      |  4 ++++
+ arch/arm/boot/dts/am335x-boneblack.dts |  4 ++++
+ arch/arm/boot/dts/am335x-evm.dts       |  4 ++++
+ arch/arm/boot/dts/am335x-evmsk.dts     |  4 ++++
+ arch/arm/boot/dts/am335x-lxm.dts       |  3 +++
+ arch/arm/boot/dts/am335x-nano.dts      |  4 ++++
+ arch/arm/boot/dts/am335x-pepper.dts    |  4 ++++
+ arch/arm/boot/dts/am33xx.dtsi          | 14 ++++++++++++++
+ 8 files changed, 41 insertions(+)
+
+diff --git a/arch/arm/boot/dts/am335x-bone.dts b/arch/arm/boot/dts/am335x-bone.dts
+index 3688fff0a5f0..84121aab44f4 100644
+--- a/arch/arm/boot/dts/am335x-bone.dts
++++ b/arch/arm/boot/dts/am335x-bone.dts
+@@ -25,3 +25,7 @@
+ &mmc1 {
+ 	vmmc-supply = <&ldo3_reg>;
+ };
++
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-boneblack.dts b/arch/arm/boot/dts/am335x-boneblack.dts
+index e62023252165..c081e58a0e6a 100644
+--- a/arch/arm/boot/dts/am335x-boneblack.dts
++++ b/arch/arm/boot/dts/am335x-boneblack.dts
+@@ -27,3 +27,7 @@
+ 		opp-supported-hw = <0x06 0x0100>;
+ 	};
+ };
++ 
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-evm.dts b/arch/arm/boot/dts/am335x-evm.dts
+index ddd897556e03..1b521d2da086 100644
+--- a/arch/arm/boot/dts/am335x-evm.dts
++++ b/arch/arm/boot/dts/am335x-evm.dts
+@@ -793,3 +793,7 @@
+ 	clocks = <&clk_32768_ck>, <&clkdiv32k_ick>;
+ 	clock-names = "ext-clk", "int-clk";
+ };
++
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-evmsk.dts b/arch/arm/boot/dts/am335x-evmsk.dts
+index 9ba4b18c0cb2..bd20ad649479 100644
+--- a/arch/arm/boot/dts/am335x-evmsk.dts
++++ b/arch/arm/boot/dts/am335x-evmsk.dts
+@@ -725,3 +725,7 @@
+ 	clocks = <&clk_32768_ck>, <&clkdiv32k_ick>;
+ 	clock-names = "ext-clk", "int-clk";
+ };
++
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-lxm.dts b/arch/arm/boot/dts/am335x-lxm.dts
+index 1d6c6fa703e4..003647f39487 100644
+--- a/arch/arm/boot/dts/am335x-lxm.dts
++++ b/arch/arm/boot/dts/am335x-lxm.dts
+@@ -364,3 +364,6 @@
+ 	status = "okay";
+ };
+ 
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-nano.dts b/arch/arm/boot/dts/am335x-nano.dts
+index 946d7069f417..2457ca8a55cd 100644
+--- a/arch/arm/boot/dts/am335x-nano.dts
++++ b/arch/arm/boot/dts/am335x-nano.dts
+@@ -467,3 +467,7 @@
+ 		};
+ 	};
+ };
++
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am335x-pepper.dts b/arch/arm/boot/dts/am335x-pepper.dts
+index 03c7d77023c6..5a14501c0841 100644
+--- a/arch/arm/boot/dts/am335x-pepper.dts
++++ b/arch/arm/boot/dts/am335x-pepper.dts
+@@ -654,3 +654,7 @@
+ 		>;
+ 	};
+ };
++
++&sgx {
++	status = "okay";
++};
+diff --git a/arch/arm/boot/dts/am33xx.dtsi b/arch/arm/boot/dts/am33xx.dtsi
+index 32bd745b231c..f543f29172c1 100644
+--- a/arch/arm/boot/dts/am33xx.dtsi
++++ b/arch/arm/boot/dts/am33xx.dtsi
+@@ -1175,6 +1175,20 @@
+ 			reg = <0x48310000 0x2000>;
+ 			interrupts = <111>;
+ 		};
++
++		/*
++		 * The SGX is disabled by default because it is an optional
++		 * module and only some AM335x variants contain this module,
++		 * such as AM3358 and AM3357. The status should be overwritten
++		 * as "OK" at the corresponding board.dts.
++		 */
++		sgx: sgx@0x56000000 {
++			compatible = "ti,am3352-sgx530", "img,sgx530";
++			ti,hwmods = "gfx";
++			reg = <0x56000000 0x1000000>;
++			interrupts = <37>;
++			status = "disabled";
++		};
+ 	};
+ };
+ 
+-- 
+2.15.1
+
