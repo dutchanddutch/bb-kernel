@@ -1,0 +1,32 @@
+From 66c3693ab58d8a3218faf1042e66b863b94c669f Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 3 Apr 2018 23:04:30 +0200
+Subject: [PATCH] ASoC: wm8731: support osc by setting sysclk dir
+
+Support making the codec the master clock generator (using its built-in
+oscillator) by setting the sysclk direction flag to SND_SOC_CLOCK_OUT as
+alternative to having to request clk_id=1 (which is not supported by
+simple-sound-card).
+
+Signed-off-by: Matthijs van Duin <matthijsvanduin@gmail.com>
+---
+ sound/soc/codecs/wm8731.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sound/soc/codecs/wm8731.c b/sound/soc/codecs/wm8731.c
+index 4f9a1eb28120..65e78076ff01 100644
+--- a/sound/soc/codecs/wm8731.c
++++ b/sound/soc/codecs/wm8731.c
+@@ -388,6 +388,9 @@ static int wm8731_set_dai_sysclk(struct snd_soc_dai *codec_dai,
+ 	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+ 	struct wm8731_priv *wm8731 = snd_soc_codec_get_drvdata(codec);
+ 
++	if (clk_id == WM8731_SYSCLK_MCLK && dir == SND_SOC_CLOCK_OUT)
++		clk_id = WM8731_SYSCLK_XTAL;
++
+ 	switch (clk_id) {
+ 	case WM8731_SYSCLK_XTAL:
+ 	case WM8731_SYSCLK_MCLK:
+-- 
+2.16.2
+
