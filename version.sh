@@ -46,4 +46,4 @@ BRANCH="${branch_prefix}${KERNEL_REL}${branch_postfix}"
 DISTRO=cross
 DEBARCH=armhf
 #
-BUILD+=-dd16
+BUILD+=-dd17

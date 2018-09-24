@@ -1,0 +1,43 @@
+From 226531b0c704b239b7ce1c825ddcb585aa8b2cd6 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 19 Jul 2018 07:45:04 +0200
+Subject: [PATCH] HACK: auto-ungate ehrpwm timebase clocks
+
+---
+ arch/arm/mach-omap2/omap_hwmod_33xx_43xx_ipblock_data.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/omap_hwmod_33xx_43xx_ipblock_data.c b/arch/arm/mach-omap2/omap_hwmod_33xx_43xx_ipblock_data.c
+index de06a1d5ffab..9e32cf9487d2 100644
+--- a/arch/arm/mach-omap2/omap_hwmod_33xx_43xx_ipblock_data.c
++++ b/arch/arm/mach-omap2/omap_hwmod_33xx_43xx_ipblock_data.c
+@@ -482,7 +482,7 @@ struct omap_hwmod am33xx_epwmss0_hwmod = {
+ 	.name		= "epwmss0",
+ 	.class		= &am33xx_epwmss_hwmod_class,
+ 	.clkdm_name	= "l4ls_clkdm",
+-	.main_clk	= "l4ls_gclk",
++	.main_clk	= "ehrpwm0_tbclk",
+ 	.prcm		= {
+ 		.omap4	= {
+ 			.modulemode	= MODULEMODE_SWCTRL,
+@@ -495,7 +495,7 @@ struct omap_hwmod am33xx_epwmss1_hwmod = {
+ 	.name		= "epwmss1",
+ 	.class		= &am33xx_epwmss_hwmod_class,
+ 	.clkdm_name	= "l4ls_clkdm",
+-	.main_clk	= "l4ls_gclk",
++	.main_clk	= "ehrpwm1_tbclk",
+ 	.prcm		= {
+ 		.omap4	= {
+ 			.modulemode	= MODULEMODE_SWCTRL,
+@@ -508,7 +508,7 @@ struct omap_hwmod am33xx_epwmss2_hwmod = {
+ 	.name		= "epwmss2",
+ 	.class		= &am33xx_epwmss_hwmod_class,
+ 	.clkdm_name	= "l4ls_clkdm",
+-	.main_clk	= "l4ls_gclk",
++	.main_clk	= "ehrpwm2_tbclk",
+ 	.prcm		= {
+ 		.omap4	= {
+ 			.modulemode	= MODULEMODE_SWCTRL,
+-- 
+2.18.0
+
