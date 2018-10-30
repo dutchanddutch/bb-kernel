@@ -1,0 +1,72 @@
+From 2257a166b7976df3ec33f08b8940435a9124ce57 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 25 Oct 2018 08:50:02 +0200
+Subject: [PATCH 14/17] clocksource: add snapshot sysfs attribute
+
+---
+ kernel/time/clocksource.c | 35 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/kernel/time/clocksource.c b/kernel/time/clocksource.c
+index 3b71d859ee38..84d601e456a1 100644
+--- a/kernel/time/clocksource.c
++++ b/kernel/time/clocksource.c
+@@ -990,6 +990,34 @@ sysfs_show_available_clocksources(struct device *dev,
+ 	return count;
+ }
+ 
++static ssize_t
++sysfs_show_snapshot(struct device *dev,
++				struct device_attribute *attr,
++				char *buf)
++{
++	struct system_time_snapshot snapshot;
++	ssize_t count = 0;
++
++	mutex_lock(&clocksource_mutex);
++	count = snprintf(buf, PAGE_SIZE, "clocksource=%s\n", curr_clocksource->name);
++	ktime_get_snapshot(&snapshot);
++	mutex_unlock(&clocksource_mutex);
++
++	count += snprintf(buf + count, max((ssize_t)PAGE_SIZE - count, (ssize_t)0),
++			"clocksource_changes=%u\n"
++			"clock_was_set=%u\n"
++			"cycles=%llu\n"
++			"real_time=%lld\n"
++			"raw_time=%lld\n",
++			snapshot.cs_was_changed_seq,
++			snapshot.clock_was_set_seq,
++			snapshot.cycles,
++			snapshot.real,
++			snapshot.raw );
++
++	return count;
++}
++
+ /*
+  * Sysfs setup bits:
+  */
+@@ -1001,6 +1029,9 @@ static DEVICE_ATTR(unbind_clocksource, 0200, NULL, sysfs_unbind_clocksource);
+ static DEVICE_ATTR(available_clocksource, 0444,
+ 		   sysfs_show_available_clocksources, NULL);
+ 
++static DEVICE_ATTR(snapshot, 0444,
++		   sysfs_show_snapshot, NULL);
++
+ static struct bus_type clocksource_subsys = {
+ 	.name = "clocksource",
+ 	.dev_name = "clocksource",
+@@ -1028,6 +1059,10 @@ static int __init init_clocksource_sysfs(void)
+ 		error = device_create_file(
+ 				&device_clocksource,
+ 				&dev_attr_available_clocksource);
++	if (!error)
++		error = device_create_file(
++				&device_clocksource,
++				&dev_attr_snapshot);
+ 	return error;
+ }
+ 
+-- 
+2.18.0
+

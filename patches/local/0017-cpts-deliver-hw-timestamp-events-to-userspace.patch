@@ -1,0 +1,93 @@
+From 8976a0d57fce807bd2de115a25835874b5ffdf8c Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 30 Oct 2018 05:05:31 +0100
+Subject: [PATCH 17/17] cpts: deliver hw timestamp events to userspace
+
+---
+ drivers/net/ethernet/ti/cpts.c | 44 +++++++++++++++++++++++++++++++---
+ 1 file changed, 41 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index 9cccb4586969..d49bd4e6fae2 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -127,6 +127,15 @@ static bool cpts_match_tx_ts(struct cpts *cpts, u32 high, u32 low)
+ 	return found;
+ }
+ 
++static void cpts_queue_hw_event(struct cpts *cpts, u32 high, u32 low)
++{
++	struct ptp_clock_event event;
++	event.type = PTP_CLOCK_EXTTS;
++	event.index = ((high >> PORT_NUMBER_SHIFT) & PORT_NUMBER_MASK) - 1;
++	event.timestamp = timecounter_cyc2time(&cpts->tc, low);
++	ptp_clock_event(cpts->clock, &event);
++}
++
+ static int cpts_fifo_read(struct cpts *cpts, u32 *push_ts)
+ {
+ 	int i, type;
+@@ -156,9 +165,11 @@ static int cpts_fifo_read(struct cpts *cpts, u32 *push_ts)
+ 			}
+ 			pr_err("cpts: unexpected push event\n");
+ 			break;
++		case CPTS_EV_HW:
++			cpts_queue_hw_event(cpts, hi, lo);
++			break;
+ 		case CPTS_EV_ROLL:
+ 		case CPTS_EV_HALF:
+-		case CPTS_EV_HW:
+ 			break;
+ 		default:
+ 			pr_err("cpts: unknown event type\n");
+@@ -321,10 +332,37 @@ static int cpts_ptp_settime(struct ptp_clock_info *ptp,
+ 	return 0;
+ }
+ 
++static int cpts_ptp_req_extts(struct cpts *cpts, unsigned index, int on)
++{
++	unsigned long flags;
++	u32 config;
++
++	if (index >= 4)
++		return -EINVAL;
++
++	spin_lock_irqsave(&cpts->lock, flags);
++	config = cpts_read32(cpts, control);
++	if (on)
++		config |= HW1_TS_PUSH_EN << index;
++	else
++		config &= ~(HW1_TS_PUSH_EN << index);
++	cpts_write32(cpts, config, control);
++	spin_unlock_irqrestore(&cpts->lock, flags);
++
++	return 0;
++}
++
+ static int cpts_ptp_enable(struct ptp_clock_info *ptp,
+ 			   struct ptp_clock_request *rq, int on)
+ {
+-	return -EOPNOTSUPP;
++	struct cpts *cpts = container_of(ptp, struct cpts, info);
++
++	switch (rq->type) {
++	case PTP_CLK_REQ_EXTTS:
++		return cpts_ptp_req_extts(cpts, rq->extts.index, on);
++	default:
++		return -EOPNOTSUPP;
++	}
+ }
+ 
+ static long cpts_overflow_check(struct ptp_clock_info *ptp)
+@@ -349,7 +387,7 @@ static const struct ptp_clock_info cpts_info = {
+ 	.owner		= THIS_MODULE,
+ 	.name		= "CTPS timer",
+ 	.max_adj	= 1000000,
+-	.n_ext_ts	= 0,
++	.n_ext_ts	= 4,
+ 	.n_pins		= 0,
+ 	.pps		= 0,
+ 	.adjfreq	= cpts_ptp_adjfreq,
+-- 
+2.18.0
+

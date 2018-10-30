@@ -1,0 +1,212 @@
+From c1d070dd26b21e90783cbec65d11b7a6f1e80965 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 25 Oct 2018 22:22:58 +0200
+Subject: [PATCH 15/17] clocksource: add timer-ti-ecap driver
+
+---
+ drivers/clocksource/Kconfig         |   7 ++
+ drivers/clocksource/Makefile        |   1 +
+ drivers/clocksource/timer-ti-ecap.c | 166 ++++++++++++++++++++++++++++
+ 3 files changed, 174 insertions(+)
+ create mode 100644 drivers/clocksource/timer-ti-ecap.c
+
+diff --git a/drivers/clocksource/Kconfig b/drivers/clocksource/Kconfig
+index cc6062049170..0b31b2a8e91b 100644
+--- a/drivers/clocksource/Kconfig
++++ b/drivers/clocksource/Kconfig
+@@ -615,4 +615,11 @@ config CLKSRC_ST_LPC
+ 	  Enable this option to use the Low Power controller timer
+ 	  as clocksource.
+ 
++config CLKSRC_TI_ECAP
++	tristate "Clocksource using Texas Instruments eCAP"
++	depends on ARM
++	help
++	  Enable this option to be able to use a TI eCAP module as
++	  clocksource.
++
+ endmenu
+diff --git a/drivers/clocksource/Makefile b/drivers/clocksource/Makefile
+index 72711f1491e3..be313132b3f4 100644
+--- a/drivers/clocksource/Makefile
++++ b/drivers/clocksource/Makefile
+@@ -75,3 +75,4 @@ obj-$(CONFIG_H8300_TMR16)		+= h8300_timer16.o
+ obj-$(CONFIG_H8300_TPU)			+= h8300_tpu.o
+ obj-$(CONFIG_CLKSRC_ST_LPC)		+= clksrc_st_lpc.o
+ obj-$(CONFIG_X86_NUMACHIP)		+= numachip.o
++obj-$(CONFIG_CLKSRC_TI_ECAP)		+= timer-ti-ecap.o
+diff --git a/drivers/clocksource/timer-ti-ecap.c b/drivers/clocksource/timer-ti-ecap.c
+new file mode 100644
+index 000000000000..f3537b75300e
+--- /dev/null
++++ b/drivers/clocksource/timer-ti-ecap.c
+@@ -0,0 +1,166 @@
++/*
++ * Copyright (C) 2018 Dutch & Dutch
++ * Author:  Matthijs van Duin <matthijsvanduin@gmail.com>
++ * License terms:  GNU General Public License (GPL), version 2
++ */
++
++#include <linux/init.h>
++#include <linux/platform_device.h>
++#include <linux/spinlock.h>
++#include <linux/interrupt.h>
++#include <linux/ioport.h>
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/irq.h>
++#include <linux/err.h>
++#include <linux/delay.h>
++#include <linux/clocksource.h>
++#include <linux/clockchips.h>
++#include <linux/slab.h>
++#include <linux/module.h>
++#include <linux/pm_runtime.h>
++
++struct timer_ti_ecap_priv {
++	void __iomem *base;
++	struct device *dev;
++	struct clk *clk;
++	unsigned long rate;
++	struct clocksource cs;
++	uint32_t config;
++};
++
++static inline bool is_valid_divider(unsigned divider)
++{
++	return divider == 1 || (divider && divider % 2 == 0 && divider < 64);
++}
++
++static inline void timer_ti_ecap_configure(struct timer_ti_ecap_priv *p, bool enabled)
++{
++	writel_relaxed(p->config | enabled << 20, p->base + 0x28);
++}
++
++static inline u32 timer_ti_ecap_get_counter(struct timer_ti_ecap_priv *p)
++{
++	return readl_relaxed(p->base);
++}
++
++
++static inline struct timer_ti_ecap_priv *cs_to_timer_ti_ecap(struct clocksource *cs)
++{
++	return container_of(cs, struct timer_ti_ecap_priv, cs);
++}
++
++static u64 timer_ti_ecap_clocksource_read(struct clocksource *cs)
++{
++	return timer_ti_ecap_get_counter(cs_to_timer_ti_ecap(cs));
++}
++
++
++static int timer_ti_ecap_register_clocksource(struct timer_ti_ecap_priv *p)
++{
++	struct clocksource *cs = &p->cs;
++
++	cs->name = dev_name(p->dev);
++	cs->rating = 350;
++	cs->read = timer_ti_ecap_clocksource_read;
++	cs->mask = CLOCKSOURCE_MASK(32);
++	cs->flags = CLOCK_SOURCE_IS_CONTINUOUS;
++
++	dev_info(p->dev, "registered as clock source\n");
++
++	clocksource_register_hz(cs, p->rate);
++	return 0;
++}
++
++static int timer_ti_ecap_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	struct timer_ti_ecap_priv *p;
++	int ret;
++	unsigned divider = 1;
++
++	of_property_read_u32(np, "clock-divider", &divider);
++
++	if (!is_valid_divider(divider)) {
++		dev_err(dev, "invalid clock divider: %u\n", divider);
++		return -EINVAL;
++	}
++
++	p = devm_kzalloc(dev, sizeof(*p), GFP_KERNEL);
++	if (p == NULL)
++		return -ENOMEM;
++	p->dev = dev;
++	platform_set_drvdata(pdev, p);
++
++	p->base = devm_ioremap_resource(dev,
++		platform_get_resource(pdev, IORESOURCE_MEM, 0) );
++	if (IS_ERR(p->base)) {
++		dev_err(dev, "cannot map registers\n");
++		return PTR_ERR(p->base);
++	}
++
++	p->clk = devm_clk_get(dev, "fck");
++	if (IS_ERR(p->clk)) {
++		dev_err(dev, "cannot get clock\n");
++		return PTR_ERR(p->clk);
++	}
++
++	ret = clk_prepare_enable(p->clk);
++	if (ret < 0) {
++		dev_err(dev, "cannot enable clock\n");
++		return ret;
++	}
++
++	p->rate = clk_get_rate(p->clk);
++	if (p->rate % divider) {
++		dev_err(dev, "clock rate %lu is not divisible by %u\n",
++				p->rate, divider);
++		return -EINVAL;
++	}
++	p->rate /= divider;
++
++	p->config = ( divider / 2 ) << 9;
++	p->config |= 1 << 15;  // emu-free
++
++	pm_runtime_enable(&pdev->dev);
++	pm_runtime_get_sync(&pdev->dev);
++
++	timer_ti_ecap_configure(p, true);
++	timer_ti_ecap_register_clocksource(p);
++	return 0;
++}
++
++static int timer_ti_ecap_remove(struct platform_device *pdev)
++{
++	struct timer_ti_ecap_priv *p = platform_get_drvdata(pdev);
++	int ret;
++	ret = clocksource_unregister(&p->cs);
++	if (ret)
++		return ret;
++	timer_ti_ecap_configure(p, false);
++	pm_runtime_put(p->dev);
++	pm_runtime_disable(p->dev);
++	return 0;
++}
++
++static const struct of_device_id timer_ti_ecap_dt_ids[] = {
++	{ .compatible = "ti,timer-ecap", },
++	{},
++};
++MODULE_DEVICE_TABLE(of, timer_ti_ecap_dt_ids);
++
++static struct platform_driver timer_ti_ecap_driver = {
++	.probe		= timer_ti_ecap_probe,
++	.remove		= timer_ti_ecap_remove,
++	.driver		= {
++		.name	= "timer_ti_ecap",
++		.of_match_table = timer_ti_ecap_dt_ids,
++	}
++};
++
++module_platform_driver(timer_ti_ecap_driver);
++
++MODULE_AUTHOR("Matthijs van Duin");
++MODULE_DESCRIPTION("Texas Instruments eCAP clocksource driver");
++MODULE_LICENSE("GPL v2");
+-- 
+2.18.0
+

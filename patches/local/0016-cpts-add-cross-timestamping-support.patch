@@ -1,0 +1,184 @@
+From 7392c89de1286a85b732d9f8364fceb9917ee067 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 25 Oct 2018 22:23:51 +0200
+Subject: [PATCH 16/17] cpts: add cross-timestamping support
+
+---
+ drivers/net/ethernet/ti/cpts.c | 79 +++++++++++++++++++++++++++++++++-
+ include/linux/clocksource.h    |  3 ++
+ kernel/time/clocksource.c      | 13 ++++++
+ 3 files changed, 93 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index c02f835e9321..9cccb4586969 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -28,6 +28,7 @@
+ #include <linux/workqueue.h>
+ #include <linux/if_ether.h>
+ #include <linux/if_vlan.h>
++#include <linux/clocksource.h>
+ 
+ #include "cpts.h"
+ 
+@@ -182,8 +183,72 @@ static u64 cpts_systim_read(const struct cyclecounter *cc)
+ 	return val;
+ }
+ 
++struct cpts_xts_context {
++	struct cpts *cpts;
++	struct clocksource *cs;
++};
++
++static int cpts_xts_systim_read(ktime_t *device_time,
++		struct system_counterval_t *sys_counterval, void *_ctx)
++{
++	struct cpts_xts_context const *ctx = _ctx;
++	struct cpts *cpts = ctx->cpts;
++	struct clocksource *cs = ctx->cs;
++	unsigned long flags;
++	u64 cycles_a, cycles_b;
++	u32 val;
++
++	spin_lock_irqsave(&cpts->lock, flags);
++
++	// clean up the hardware fifo first to avoid overflow
++	cpts_fifo_read(cpts, NULL);
++
++	cycles_a = cs->read( cs );
++	cpts_write32(cpts, TS_PUSH, ts_push);
++	cycles_b = cs->read( cs );
++
++	if (!cpts_fifo_read(cpts, &val)) {
++		spin_unlock_irqrestore(&cpts->lock, flags);
++
++		pr_err("cpts: unable to obtain a time stamp\n");
++		return -EIO;
++	}
++
++	cpts->tc.nsec += cyclecounter_cyc2ns(&cpts->cc,
++			(val - cpts->tc.cycle_last) & cpts->cc.mask,
++			cpts->tc.mask, &cpts->tc.frac);
++	cpts->tc.cycle_last = val;
++	*device_time = ns_to_ktime( cpts->tc.nsec );
++
++	spin_unlock_irqrestore(&cpts->lock, flags);
++
++	sys_counterval->cs = cs;
++	sys_counterval->cycles = cycles_b;
++	cycles_b -= cycles_a;
++	pr_info("cpts: cross-timestamp took %llu cycles (%lld ns)\n", cycles_b,
++			clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
++	return 0;
++}
++
++static int cpts_xts_get_crosststamp(struct cpts *cpts,
++		struct system_device_crosststamp *xtstamp)
++{
++	struct cpts_xts_context ctx = { cpts, clocksource_lock() };
++	int ret = get_device_system_crosststamp(cpts_xts_systim_read,
++			&ctx, NULL, xtstamp);
++	clocksource_unlock();
++	return ret;
++}
++
+ /* PTP clock operations */
+ 
++static int cpts_ptp_getcrosststamp(struct ptp_clock_info *ptp,
++		struct system_device_crosststamp *xtstamp)
++{
++	struct cpts *cpts = container_of(ptp, struct cpts, info);
++	return cpts_xts_get_crosststamp(cpts, xtstamp);
++}
++
+ static int cpts_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
+ {
+ 	u64 adj;
+@@ -196,13 +261,14 @@ static int cpts_ptp_adjfreq(struct ptp_clock_info *ptp, s32 ppb)
+ 		neg_adj = 1;
+ 		ppb = -ppb;
+ 	}
++
++	spin_lock_irqsave(&cpts->lock, flags);
++
+ 	mult = cpts->cc_mult;
+ 	adj = mult;
+ 	adj *= ppb;
+ 	diff = div_u64(adj, 1000000000ULL);
+ 
+-	spin_lock_irqsave(&cpts->lock, flags);
+-
+ 	timecounter_read(&cpts->tc);
+ 
+ 	cpts->cc.mult = neg_adj ? mult - diff : mult + diff;
+@@ -290,6 +356,7 @@ static const struct ptp_clock_info cpts_info = {
+ 	.adjtime	= cpts_ptp_adjtime,
+ 	.gettime64	= cpts_ptp_gettime,
+ 	.settime64	= cpts_ptp_settime,
++	.getcrosststamp	= cpts_ptp_getcrosststamp,
+ 	.enable		= cpts_ptp_enable,
+ 	.do_aux_work	= cpts_overflow_check,
+ };
+@@ -416,6 +483,7 @@ EXPORT_SYMBOL_GPL(cpts_tx_timestamp);
+ int cpts_register(struct cpts *cpts)
+ {
+ 	int err, i;
++	struct system_device_crosststamp xtstamp;
+ 
+ 	skb_queue_head_init(&cpts->txq);
+ 	INIT_LIST_HEAD(&cpts->events);
+@@ -429,6 +497,13 @@ int cpts_register(struct cpts *cpts)
+ 	cpts_write32(cpts, TS_PEND_EN, int_enable);
+ 
+ 	timecounter_init(&cpts->tc, &cpts->cc, ktime_to_ns(ktime_get_raw()));
++	err = cpts_xts_get_crosststamp(cpts, &xtstamp);
++	if (err) {
++		dev_err(cpts->dev, "cpts: cpts_xts_get_crosststamp() failed (%d)\n", err);
++	} else {
++		cpts->tc.nsec = ktime_to_ns(xtstamp.sys_monoraw);
++		cpts->tc.frac = 0;
++	}
+ 
+ 	cpts->clock = ptp_clock_register(&cpts->info, cpts->dev);
+ 	if (IS_ERR(cpts->clock)) {
+diff --git a/include/linux/clocksource.h b/include/linux/clocksource.h
+index 7dff1963c185..b68fa61e10e0 100644
+--- a/include/linux/clocksource.h
++++ b/include/linux/clocksource.h
+@@ -195,6 +195,9 @@ extern void clocksource_resume(void);
+ extern struct clocksource * __init clocksource_default_clock(void);
+ extern void clocksource_mark_unstable(struct clocksource *cs);
+ 
++extern struct clocksource *clocksource_lock(void);
++extern void clocksource_unlock(void);
++
+ extern u64
+ clocks_calc_max_nsecs(u32 mult, u32 shift, u32 maxadj, u64 mask, u64 *max_cycles);
+ extern void
+diff --git a/kernel/time/clocksource.c b/kernel/time/clocksource.c
+index 84d601e456a1..2b7f6150d5ff 100644
+--- a/kernel/time/clocksource.c
++++ b/kernel/time/clocksource.c
+@@ -854,6 +854,19 @@ int clocksource_unregister(struct clocksource *cs)
+ }
+ EXPORT_SYMBOL(clocksource_unregister);
+ 
++struct clocksource *clocksource_lock(void)
++{
++	mutex_lock(&clocksource_mutex);
++	return curr_clocksource;
++}
++EXPORT_SYMBOL_GPL(clocksource_lock);
++
++void clocksource_unlock(void)
++{
++	mutex_unlock(&clocksource_mutex);
++}
++EXPORT_SYMBOL_GPL(clocksource_unlock);
++
+ #ifdef CONFIG_SYSFS
+ /**
+  * sysfs_show_current_clocksources - sysfs interface for current clocksource
+-- 
+2.18.0
+
