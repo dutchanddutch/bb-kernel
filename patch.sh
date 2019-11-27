@@ -382,6 +382,7 @@ drivers () {
 	dir 'drivers/ssd1306'
 	dir 'drivers/tps65217'
 	dir 'drivers/opp'
+	dir 'drivers/uio'
 	dir 'drivers/wiznet'
 
 	#https://github.com/pantoniou/linux-beagle-track-mainline/tree/bbb-overlays

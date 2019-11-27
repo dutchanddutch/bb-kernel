@@ -1,0 +1,157 @@
+From 491583d2b91da88097b1af36f47392b66554e3d3 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Wed, 27 Nov 2019 20:34:06 +0100
+Subject: [PATCH 2/2] UIO: support pinctrl state selection
+
+Allow userspace drivers to select the pinctrl state for a uio device.
+
+Signed-off-by: Matthijs van Duin <matthijsvanduin@gmail.com>
+---
+ Documentation/ioctl/ioctl-number.txt |  1 +
+ drivers/uio/uio.c                    | 81 ++++++++++++++++++++++++++++
+ include/uapi/linux/uiodev.h          | 15 ++++++
+ 3 files changed, 97 insertions(+)
+ create mode 100644 include/uapi/linux/uiodev.h
+
+diff --git a/Documentation/ioctl/ioctl-number.txt b/Documentation/ioctl/ioctl-number.txt
+index 3e3fdae5f3ed..0e3d68ed69c8 100644
+--- a/Documentation/ioctl/ioctl-number.txt
++++ b/Documentation/ioctl/ioctl-number.txt
+@@ -273,6 +273,7 @@ Code  Seq#(hex)	Include File		Comments
+ 't'	90-91	linux/toshiba.h		toshiba and toshiba_acpi SMM
+ 'u'	00-1F	linux/smb_fs.h		gone
+ 'u'	20-3F	linux/uvcvideo.h	USB video class host driver
++'u'	40-5F	linux/uiodev.h		Userspace I/O
+ 'v'	00-1F	linux/ext2_fs.h		conflict!
+ 'v'	00-1F	linux/fs.h		conflict!
+ 'v'	00-0F	linux/sonypi.h		conflict!
+diff --git a/drivers/uio/uio.c b/drivers/uio/uio.c
+index 8008ae43a117..edc9a842418c 100644
+--- a/drivers/uio/uio.c
++++ b/drivers/uio/uio.c
+@@ -25,6 +25,9 @@
+ #include <linux/kobject.h>
+ #include <linux/cdev.h>
+ #include <linux/uio_driver.h>
++#include <linux/uaccess.h>
++#include <linux/pinctrl/devinfo.h>
++#include <uapi/linux/uiodev.h>
+ 
+ #define UIO_MAX_DEVICES		(1U << MINORBITS)
+ 
+@@ -722,6 +725,83 @@ static int uio_mmap(struct file *filep, struct vm_area_struct *vma)
+ 	}
+ }
+ 
++static int uio_get_pinctrl_state(struct uio_device *idev,
++		struct uio_pinctrl_state __user *arg)
++{
++#ifdef CONFIG_PINCTRL
++	struct device *dev = idev->dev->parent;
++	char const *name;
++	size_t len;
++	int res;
++
++	if (!dev->pins)
++		return -ENODEV;  /* no pinctrl */
++
++	device_lock(dev);
++
++	name = pinctrl_state_get_name(pinctrl_get_state(dev->pins->p));
++	if (!name)
++		res = -ENOENT;  /* no state */
++	else if ((len = strnlen(name, sizeof(arg->name))) >= sizeof(arg->name))
++		res = -EINVAL;  /* state name does not fit in buffer */
++	else if (copy_to_user(arg->name, name, len+1))
++		res = -EFAULT;
++	else
++		res = 0;
++
++	device_unlock(dev);
++	return res;
++#else
++	return -ENODEV;  /* no pinctrl */
++#endif
++}
++
++static int uio_set_pinctrl_state(struct uio_device *idev,
++		const struct uio_pinctrl_state __user *arg)
++{
++#ifdef CONFIG_PINCTRL
++	struct device *dev = idev->dev->parent;
++	struct uio_pinctrl_state buf;
++	struct pinctrl_state *state;
++	int res;
++
++	if (copy_from_user(&buf, arg, sizeof(buf)))
++		return -EFAULT;
++	if (strnlen(buf.name, sizeof(buf.name)) >= sizeof(buf.name))
++		return -EINVAL;  /* state name does not fit in buffer */
++	if (!dev->pins)
++		return -ENODEV;  /* no pinctrl */
++
++	device_lock(dev);
++
++	state = pinctrl_lookup_state(dev->pins->p, buf.name);
++	if (IS_ERR(state))
++		res = -ENOENT;  /* no such state */
++	else
++		res = pinctrl_select_state(dev->pins->p, state);
++
++	device_unlock(dev);
++	return res;
++#else
++	return -ENODEV;  /* no pinctrl */
++#endif
++}
++
++static long uio_ioctl(struct file *filep, unsigned cmd, unsigned long arg)
++{
++	struct uio_listener *listener = filep->private_data;
++	struct uio_device *idev = listener->dev;
++
++	switch(cmd) {
++	case UIO_IOC_GET_PINCTRL_STATE:
++		return uio_get_pinctrl_state(idev, (void __user *)arg);
++	case UIO_IOC_SET_PINCTRL_STATE:
++		return uio_set_pinctrl_state(idev, (void __user *)arg);
++	}
++
++	return -ENOIOCTLCMD;
++}
++
+ static const struct file_operations uio_fops = {
+ 	.owner		= THIS_MODULE,
+ 	.open		= uio_open,
+@@ -732,6 +812,7 @@ static const struct file_operations uio_fops = {
+ 	.poll		= uio_poll,
+ 	.fasync		= uio_fasync,
+ 	.llseek		= noop_llseek,
++	.unlocked_ioctl	= uio_ioctl,
+ };
+ 
+ static int uio_major_init(void)
+diff --git a/include/uapi/linux/uiodev.h b/include/uapi/linux/uiodev.h
+new file mode 100644
+index 000000000000..f81cb7d90039
+--- /dev/null
++++ b/include/uapi/linux/uiodev.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _UAPI_LINUX_UIODEV_H
++#define _UAPI_LINUX_UIODEV_H
++
++#include <linux/ioctl.h>
++#include <linux/types.h>
++
++struct uio_pinctrl_state {
++	char name[32];
++};
++
++#define UIO_IOC_GET_PINCTRL_STATE  _IOR('u', 0x40, struct uio_pinctrl_state)
++#define UIO_IOC_SET_PINCTRL_STATE  _IOW('u', 0x41, struct uio_pinctrl_state)
++
++#endif /* _UAPI_LINUX_UIODEV_H */
+-- 
+2.20.1
+
