@@ -1,0 +1,28 @@
+From 791b3b5cf7ccba5de21d3ca05f7cd7748ef769ec Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 7 May 2020 11:52:35 +0200
+Subject: [PATCH] HACK: suppress "no matching timers found" error
+
+On am335x there's a spurious error:
+timer_probe: no matching timers found
+
+This patch suppresses it, although it would be better to figure out why
+this is being triggered in the first place
+---
+ drivers/clocksource/timer-probe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/clocksource/timer-probe.c b/drivers/clocksource/timer-probe.c
+index 028075720334..97f5034bb804 100644
+--- a/drivers/clocksource/timer-probe.c
++++ b/drivers/clocksource/timer-probe.c
+@@ -50,5 +50,5 @@ void __init timer_probe(void)
+ 	timers += acpi_probe_device_table(timer);
+ 
+ 	if (!timers)
+-		pr_crit("%s: no matching timers found\n", __func__);
++		pr_debug("%s: no matching timers found\n", __func__);
+ }
+-- 
+2.20.1
+

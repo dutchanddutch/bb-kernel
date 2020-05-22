@@ -12,10 +12,10 @@ this code is being included in the first place.
  arch/arm/mach-omap2/voltage.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/arch/arm/mach-omap2/voltage.c b/arch/arm/mach-omap2/voltage.c
-index cd15dbd62671..3be105241995 100644
---- a/arch/arm/mach-omap2/voltage.c
-+++ b/arch/arm/mach-omap2/voltage.c
+diff --git i/arch/arm/mach-omap2/voltage.c w/arch/arm/mach-omap2/voltage.c
+index cd15dbd62671..4e5eb9a47392 100644
+--- i/arch/arm/mach-omap2/voltage.c
++++ w/arch/arm/mach-omap2/voltage.c
 @@ -241,7 +241,7 @@ int __init omap_voltage_late_init(void)
  	struct voltagedomain *voltdm;
  

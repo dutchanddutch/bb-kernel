@@ -1,0 +1,430 @@
+From 7325b6bff8036495800a1df64818dc0ac5005bdf Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 22 May 2020 22:40:26 +0200
+Subject: [PATCH] XXX misc cpts stuff
+
+---
+ drivers/net/ethernet/ti/cpsw.c |   6 +-
+ drivers/net/ethernet/ti/cpts.c | 196 +++++++++++++++++++++------------
+ 2 files changed, 129 insertions(+), 73 deletions(-)
+
+diff --git a/drivers/net/ethernet/ti/cpsw.c b/drivers/net/ethernet/ti/cpsw.c
+index 8cb44eabc283..0a92447e2161 100644
+--- a/drivers/net/ethernet/ti/cpsw.c
++++ b/drivers/net/ethernet/ti/cpsw.c
+@@ -253,7 +253,7 @@ struct cpsw_ss_regs {
+ #define TS_RX_EN            (1<<0)  /* Time Sync Receive Enable */
+ 
+ #define CTRL_V2_TS_BITS \
+-	(TS_320 | TS_319 | TS_132 | TS_131 | TS_130 | TS_129 |\
++	(TS_319 | TS_132 | TS_131 | TS_130 | TS_129 |\
+ 	 TS_TTL_NONZERO  | TS_ANNEX_D_EN | TS_LTYPE1_EN)
+ 
+ #define CTRL_V2_ALL_TS_MASK (CTRL_V2_TS_BITS | TS_TX_EN | TS_RX_EN)
+@@ -262,7 +262,7 @@ struct cpsw_ss_regs {
+ 
+ 
+ #define CTRL_V3_TS_BITS \
+-	(TS_320 | TS_319 | TS_132 | TS_131 | TS_130 | TS_129 |\
++	(TS_319 | TS_132 | TS_131 | TS_130 | TS_129 |\
+ 	 TS_TTL_NONZERO | TS_ANNEX_F_EN | TS_ANNEX_D_EN |\
+ 	 TS_LTYPE1_EN)
+ 
+@@ -277,7 +277,7 @@ struct cpsw_ss_regs {
+ #define TS_MSG_TYPE_EN_MASK      (0xffff)
+ 
+ /* The PTP event messages - Sync, Delay_Req, Pdelay_Req, and Pdelay_Resp. */
+-#define EVENT_MSG_BITS ((1<<0) | (1<<1) | (1<<2) | (1<<3))
++#define EVENT_MSG_BITS (0xff)
+ 
+ /* Bit definitions for the CPSW1_TS_CTL register */
+ #define CPSW_V1_TS_RX_EN		BIT(0)
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index d49bd4e6fae2..eab6badab3c0 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -36,14 +36,14 @@
+ 
+ struct cpts_skb_cb_data {
+ 	unsigned long tmo;
++	u8 class;
++	u8 mtype;
++	u16 seqid;
+ };
+ 
+ #define cpts_read32(c, r)	readl_relaxed(&c->reg->r)
+ #define cpts_write32(c, v, r)	writel_relaxed(v, &c->reg->r)
+ 
+-static int cpts_match(struct sk_buff *skb, unsigned int ptp_class,
+-		      u16 ts_seqid, u8 ts_msgtype);
+-
+ static int event_expired(struct cpts_event *event)
+ {
+ 	return time_after(jiffies, event->tmo);
+@@ -62,21 +62,47 @@ static int cpts_fifo_pop(struct cpts *cpts, u32 *high, u32 *low)
+ 		*high = cpts_read32(cpts, event_high);
+ 		*low  = cpts_read32(cpts, event_low);
+ 		cpts_write32(cpts, EVENT_POP, event_pop);
++		dev_dbg(cpts->dev, "raw event %08x ts %08x\n", *high, *low);
+ 		return 0;
+ 	}
+ 	return -1;
+ }
+ 
++static void cpts_expire_events(struct cpts *cpts)
++{
++	struct list_head *this, *next;
++	struct cpts_event *event;
++	int type, mtype, seqid;
++
++	list_for_each_safe(this, next, &cpts->events) {
++		event = list_entry(this, struct cpts_event, list);
++		if (!event_expired(event))
++			break;
++		type = (event->high >> EVENT_TYPE_SHIFT) & EVENT_TYPE_MASK;
++		mtype = (event->high >> MESSAGE_TYPE_SHIFT) & MESSAGE_TYPE_MASK;
++		seqid = (event->high >> SEQUENCE_ID_SHIFT) & SEQUENCE_ID_MASK;
++		dev_dbg(cpts->dev,
++			"expiring %s timestamp mtype %u seqid %04x\n",
++			(type == CPTS_EV_TX) ? "tx" : "rx", mtype, seqid);
++		list_move(&event->list, &cpts->pool);
++	}
++}
++
+ static void cpts_queue_event(struct cpts *cpts, u32 high, u32 low)
+ {
+ 	struct cpts_event *event;
+ 
+ 	if (list_empty(&cpts->pool)) {
+ 		// drop oldest event
++		int type, mtype, seqid;
+ 		event = list_first_entry(&cpts->events,
+ 				struct cpts_event, list);
+-		if (!event_expired(event))
+-			pr_warn("cpts: event pool is empty, dropping event\n");
++		type = (event->high >> EVENT_TYPE_SHIFT) & EVENT_TYPE_MASK;
++		mtype = (event->high >> MESSAGE_TYPE_SHIFT) & MESSAGE_TYPE_MASK;
++		seqid = (event->high >> SEQUENCE_ID_SHIFT) & SEQUENCE_ID_MASK;
++		dev_warn(cpts->dev, "event pool is empty, "
++			"dropping %s timestamp mtype %u seqid %04x\n",
++			(type == CPTS_EV_TX) ? "tx" : "rx", mtype, seqid);
+ 	} else {
+ 		event = list_first_entry(&cpts->pool, struct cpts_event, list);
+ 	}
+@@ -86,45 +112,56 @@ static void cpts_queue_event(struct cpts *cpts, u32 high, u32 low)
+ 	list_move_tail(&event->list, &cpts->events);
+ }
+ 
+-static bool cpts_match_tx_ts(struct cpts *cpts, u32 high, u32 low)
++static void cpts_expire_skbs(struct cpts *cpts)
+ {
+ 	struct sk_buff *skb, *tmp;
++
++	/* no need to grab txq.lock as access is always done under cpts->lock */
++	skb_queue_walk_safe(&cpts->txq, skb, tmp) {
++		struct cpts_skb_cb_data *skb_cb =
++					(struct cpts_skb_cb_data *)skb->cb;
++
++		if (!time_after(jiffies, skb_cb->tmo))
++			break;
++
++		dev_dbg(cpts->dev, "expiring tx skb class %02x mtype %u seqid %04x\n",
++			skb_cb->class, skb_cb->mtype, skb_cb->seqid);
++		__skb_unlink(skb, &cpts->txq);
++		dev_consume_skb_any(skb);
++	}
++}
++
++static bool cpts_match_tx_ts(struct cpts *cpts, u32 high, u32 low)
++{
++	struct sk_buff *skb;
+ 	u16 seqid;
+ 	u8 mtype;
+-	bool found = false;
+ 
+ 	mtype = (high >> MESSAGE_TYPE_SHIFT) & MESSAGE_TYPE_MASK;
+ 	seqid = (high >> SEQUENCE_ID_SHIFT) & SEQUENCE_ID_MASK;
+ 
+ 	/* no need to grab txq.lock as access is always done under cpts->lock */
+-	skb_queue_walk_safe(&cpts->txq, skb, tmp) {
+-		struct skb_shared_hwtstamps ssh;
+-		unsigned int class = ptp_classify_raw(skb);
++	skb_queue_walk(&cpts->txq, skb) {
+ 		struct cpts_skb_cb_data *skb_cb =
+ 					(struct cpts_skb_cb_data *)skb->cb;
+-
+-		if (cpts_match(skb, class, seqid, mtype)) {
++		if (skb_cb->mtype == mtype && skb_cb->seqid == seqid) {
+ 			u64 ns = timecounter_cyc2time(&cpts->tc, low);
++			struct skb_shared_hwtstamps ssh;
++
++			dev_dbg(cpts->dev,
++				"match tx skb class %02x mtype %u seqid %04x\n",
++				skb_cb->class, mtype, seqid);
+ 
+ 			memset(&ssh, 0, sizeof(ssh));
+ 			ssh.hwtstamp = ns_to_ktime(ns);
+ 			skb_tstamp_tx(skb, &ssh);
+-			found = true;
+-			__skb_unlink(skb, &cpts->txq);
+-			dev_consume_skb_any(skb);
+-			dev_dbg(cpts->dev, "match tx timestamp mtype %u seqid %04x\n",
+-				mtype, seqid);
+-		} else if (time_after(jiffies, skb_cb->tmo)) {
+-			/* timeout any expired skbs over 1s */
+-			dev_dbg(cpts->dev,
+-				"expiring tx timestamp mtype %u seqid %04x\n",
+-				mtype, seqid);
+ 			__skb_unlink(skb, &cpts->txq);
+ 			dev_consume_skb_any(skb);
++			return true;
+ 		}
+ 	}
+ 
+-	return found;
++	return false;
+ }
+ 
+ static void cpts_queue_hw_event(struct cpts *cpts, u32 high, u32 low)
+@@ -141,10 +178,15 @@ static int cpts_fifo_read(struct cpts *cpts, u32 *push_ts)
+ 	int i, type;
+ 	u32 hi, lo;
+ 
++	cpts_expire_events(cpts);
++
+ 	for (i = 0; i < CPTS_FIFO_DEPTH; i++) {
+ 		if (cpts_fifo_pop(cpts, &hi, &lo))
+ 			break;
+ 
++		if (push_ts)
++			*push_ts = lo;
++
+ 		type = (hi >> EVENT_TYPE_SHIFT) & EVENT_TYPE_MASK;
+ 		switch (type) {
+ 		case CPTS_EV_TX:
+@@ -159,11 +201,9 @@ static int cpts_fifo_read(struct cpts *cpts, u32 *push_ts)
+ 			cpts_queue_event(cpts, hi, lo);
+ 			break;
+ 		case CPTS_EV_PUSH:
+-			if (push_ts) {
+-				*push_ts = lo;
++			if (push_ts)
+ 				return 1;
+-			}
+-			pr_err("cpts: unexpected push event\n");
++			dev_err(cpts->dev, "unexpected push event\n");
+ 			break;
+ 		case CPTS_EV_HW:
+ 			cpts_queue_hw_event(cpts, hi, lo);
+@@ -172,10 +212,12 @@ static int cpts_fifo_read(struct cpts *cpts, u32 *push_ts)
+ 		case CPTS_EV_HALF:
+ 			break;
+ 		default:
+-			pr_err("cpts: unknown event type\n");
++			dev_err(cpts->dev, "unknown event type\n");
+ 			break;
+ 		}
+ 	}
++
++	cpts_expire_skbs(cpts);
+ 	return 0;
+ }
+ 
+@@ -189,7 +231,7 @@ static u64 cpts_systim_read(const struct cyclecounter *cc)
+ 
+ 	cpts_write32(cpts, TS_PUSH, ts_push);
+ 	if (!cpts_fifo_read(cpts, &val))
+-		pr_err("cpts: unable to obtain a time stamp\n");
++		dev_err(cpts->dev, "unable to obtain a time stamp\n");
+ 
+ 	return val;
+ }
+@@ -221,7 +263,7 @@ static int cpts_xts_systim_read(ktime_t *device_time,
+ 	if (!cpts_fifo_read(cpts, &val)) {
+ 		spin_unlock_irqrestore(&cpts->lock, flags);
+ 
+-		pr_err("cpts: unable to obtain a time stamp\n");
++		dev_err(cpts->dev, "unable to obtain a time stamp\n");
+ 		return -EIO;
+ 	}
+ 
+@@ -236,8 +278,8 @@ static int cpts_xts_systim_read(ktime_t *device_time,
+ 	sys_counterval->cs = cs;
+ 	sys_counterval->cycles = cycles_b;
+ 	cycles_b -= cycles_a;
+-	pr_info("cpts: cross-timestamp took %llu cycles (%lld ns)\n", cycles_b,
+-			clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
++	dev_info(cpts->dev, "cross-timestamp took %llu cycles (%lld ns)\n",
++ 		 cycles_b, clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
+ 	return 0;
+ }
+ 
+@@ -377,9 +419,12 @@ static long cpts_overflow_check(struct ptp_clock_info *ptp)
+ 
+ 	if (!skb_queue_empty(&cpts->txq))
+ 		delay = CPTS_SKB_TX_WORK_TIMEOUT;
++	else if (!list_empty(&cpts->events))
++		delay = HZ / 2;
+ 	spin_unlock_irqrestore(&cpts->lock, flags);
+ 
+-	pr_debug("cpts overflow check at %lld.%09lu\n", ts.tv_sec, ts.tv_nsec);
++	dev_dbg(cpts->dev, "overflow check at %lld.%09lu\n",
++		ts.tv_sec, ts.tv_nsec);
+ 	return (long)delay;
+ }
+ 
+@@ -399,13 +444,19 @@ static const struct ptp_clock_info cpts_info = {
+ 	.do_aux_work	= cpts_overflow_check,
+ };
+ 
+-static int cpts_match(struct sk_buff *skb, unsigned int ptp_class,
+-		      u16 ts_seqid, u8 ts_msgtype)
++static bool cpts_classify(struct cpts *cpts, struct sk_buff *skb)
+ {
++	struct cpts_skb_cb_data *skb_cb = (struct cpts_skb_cb_data *)skb->cb;
++	unsigned int ptp_class = ptp_classify_raw(skb);
+ 	u16 *seqid;
+ 	unsigned int offset = 0;
+ 	u8 *msgtype, *data = skb->data;
+ 
++	skb_cb->class = ptp_class;
++
++	if (ptp_class == PTP_CLASS_NONE)
++		return false;
++
+ 	if (ptp_class & PTP_CLASS_VLAN)
+ 		offset += VLAN_HLEN;
+ 
+@@ -420,11 +471,15 @@ static int cpts_match(struct sk_buff *skb, unsigned int ptp_class,
+ 		offset += ETH_HLEN;
+ 		break;
+ 	default:
+-		return 0;
++		dev_dbg(cpts->dev, "unknown protocol (class = 0x%02x)\n",
++			ptp_class);
++		return false;
+ 	}
+ 
+-	if (skb->len + ETH_HLEN < offset + OFF_PTP_SEQUENCE_ID + sizeof(*seqid))
+-		return 0;
++	if (skb->len + ETH_HLEN < offset + OFF_PTP_SEQUENCE_ID + sizeof(*seqid)) {
++		dev_dbg(cpts->dev, "packet too short\n");
++		return false;
++	}
+ 
+ 	if (unlikely(ptp_class & PTP_CLASS_V1))
+ 		msgtype = data + offset + OFF_PTP_CONTROL;
+@@ -433,54 +488,39 @@ static int cpts_match(struct sk_buff *skb, unsigned int ptp_class,
+ 
+ 	seqid = (u16 *)(data + offset + OFF_PTP_SEQUENCE_ID);
+ 
+-	return (ts_msgtype == (*msgtype & 0xf) && ts_seqid == ntohs(*seqid));
++	skb_cb->mtype = *msgtype & 0xf;
++	skb_cb->seqid = ntohs(*seqid);
++	return true;
+ }
+ 
+ static u64 cpts_find_ts(struct cpts *cpts, struct sk_buff *skb, int ev_type)
+ {
+ 	u64 ns = 0;
+ 	struct cpts_event *event;
+-	struct list_head *this, *next;
+-	unsigned int class = ptp_classify_raw(skb);
++	struct list_head *this;
++	struct cpts_skb_cb_data *skb_cb = (struct cpts_skb_cb_data *)skb->cb;
+ 	unsigned long flags;
++	int type;
+ 	u16 seqid;
+ 	u8 mtype;
+ 
+-	if (class == PTP_CLASS_NONE)
+-		return 0;
+-
+ 	spin_lock_irqsave(&cpts->lock, flags);
+ 	cpts_fifo_read(cpts, NULL);
+-	list_for_each_safe(this, next, &cpts->events) {
++	list_for_each(this, &cpts->events) {
+ 		event = list_entry(this, struct cpts_event, list);
+-		if (event_expired(event)) {
+-			list_del_init(&event->list);
+-			list_add(&event->list, &cpts->pool);
+-			continue;
+-		}
++		type = (event->high >> EVENT_TYPE_SHIFT) & EVENT_TYPE_MASK;
+ 		mtype = (event->high >> MESSAGE_TYPE_SHIFT) & MESSAGE_TYPE_MASK;
+ 		seqid = (event->high >> SEQUENCE_ID_SHIFT) & SEQUENCE_ID_MASK;
+-		if (ev_type == event_type(event) &&
+-		    cpts_match(skb, class, seqid, mtype)) {
++		if (ev_type == type && mtype == skb_cb->mtype && seqid == skb_cb->seqid) {
+ 			ns = timecounter_cyc2time(&cpts->tc, event->low);
+-			list_del_init(&event->list);
+-			list_add(&event->list, &cpts->pool);
++			list_move(&event->list, &cpts->pool);
++			dev_dbg(cpts->dev,
++				"match %s timestamp mtype %u seqid %04x\n",
++				(type == CPTS_EV_TX) ? "tx" : "rx",
++				mtype, seqid);
+ 			break;
+ 		}
+ 	}
+-
+-	if (ev_type == CPTS_EV_TX && !ns) {
+-		struct cpts_skb_cb_data *skb_cb =
+-				(struct cpts_skb_cb_data *)skb->cb;
+-		/* Not found, add frame to queue for processing later.
+-		 * The periodic FIFO check will handle this.
+-		 */
+-		skb_get(skb);
+-		/* get the timestamp for timeouts */
+-		skb_cb->tmo = jiffies + msecs_to_jiffies(100);
+-		__skb_queue_tail(&cpts->txq, skb);
+-		ptp_schedule_worker(cpts->clock, 0);
+-	}
+ 	spin_unlock_irqrestore(&cpts->lock, flags);
+ 
+ 	return ns;
+@@ -491,7 +531,7 @@ void cpts_rx_timestamp(struct cpts *cpts, struct sk_buff *skb)
+ 	u64 ns;
+ 	struct skb_shared_hwtstamps *ssh;
+ 
+-	if (!cpts->rx_enable)
++	if (!cpts->rx_enable || !cpts_classify(cpts, skb))
+ 		return;
+ 	ns = cpts_find_ts(cpts, skb, CPTS_EV_RX);
+ 	if (!ns)
+@@ -504,14 +544,30 @@ EXPORT_SYMBOL_GPL(cpts_rx_timestamp);
+ 
+ void cpts_tx_timestamp(struct cpts *cpts, struct sk_buff *skb)
+ {
++	struct cpts_skb_cb_data *skb_cb = (struct cpts_skb_cb_data *)skb->cb;
+ 	u64 ns;
+ 	struct skb_shared_hwtstamps ssh;
+ 
+-	if (!(skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS))
++	if (!cpts_classify(cpts, skb))
+ 		return;
++	if (!(skb_shinfo(skb)->tx_flags & SKBTX_IN_PROGRESS)) {
++		dev_dbg(cpts->dev, "no timestamp requested for tx skb "
++			"class %02x mtype %u seqid %04x\n",
++			skb_cb->class, skb_cb->mtype, skb_cb->seqid);
++		return;
++	}
+ 	ns = cpts_find_ts(cpts, skb, CPTS_EV_TX);
+-	if (!ns)
++	if (!ns) {
++		/* Not found, add frame to queue for processing later.
++		 * The periodic FIFO check will handle this.
++		 */
++		skb_get(skb);
++		/* get the timestamp for timeouts */
++		skb_cb->tmo = jiffies + msecs_to_jiffies(100);
++		__skb_queue_tail(&cpts->txq, skb);
++		ptp_schedule_worker(cpts->clock, 0);
+ 		return;
++	}
+ 	memset(&ssh, 0, sizeof(ssh));
+ 	ssh.hwtstamp = ns_to_ktime(ns);
+ 	skb_tstamp_tx(skb, &ssh);
+-- 
+2.20.1
+
