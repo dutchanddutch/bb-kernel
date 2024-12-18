@@ -255,7 +255,7 @@ index d49bd4e6fae2..eab6badab3c0 100644
 -	pr_info("cpts: cross-timestamp took %llu cycles (%lld ns)\n", cycles_b,
 -			clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
 +	dev_info(cpts->dev, "cross-timestamp took %llu cycles (%lld ns)\n",
-+ 		 cycles_b, clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
++		 cycles_b, clocksource_cyc2ns(cycles_b, cs->mult, cs->shift));
  	return 0;
  }
  
