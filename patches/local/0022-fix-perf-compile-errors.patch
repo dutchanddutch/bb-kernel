@@ -1,0 +1,53 @@
+From bfb0d59095e57071c8eb1c52b35be1cb4b0c279d Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 22 Oct 2024 06:18:15 +0200
+Subject: [PATCH 22/22] fix perf compile errors
+
+---
+ tools/lib/traceevent/Makefile    | 2 +-
+ tools/perf/bench/futex-hash.c    | 2 +-
+ tools/perf/bench/futex-lock-pi.c | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/tools/lib/traceevent/Makefile b/tools/lib/traceevent/Makefile
+index 46cd5f871ad7..6cc2c357559e 100644
+--- a/tools/lib/traceevent/Makefile
++++ b/tools/lib/traceevent/Makefile
+@@ -262,7 +262,7 @@ define do_generate_dynamic_list_file
+ 	xargs echo "U W w" | tr ' ' '\n' | sort -u | xargs echo`;\
+ 	if [ "$$symbol_type" = "U W w" ];then				\
+ 		(echo '{';						\
+-		$(NM) -u -D $1 | awk 'NF>1 {print "\t"$$2";"}' | sort -u;\
++		$(NM) -u -D $1 | awk 'NF>1 {sub("@.*", "", $$2); print "\t"$$2";"}' | sort -u;\
+ 		echo '};';						\
+ 		) > $2;							\
+ 	else								\
+diff --git a/tools/perf/bench/futex-hash.c b/tools/perf/bench/futex-hash.c
+index 58ae6ed8f38b..1c63a71031a1 100644
+--- a/tools/perf/bench/futex-hash.c
++++ b/tools/perf/bench/futex-hash.c
+@@ -35,7 +35,7 @@ static unsigned int nfutexes = 1024;
+ static bool fshared = false, done = false, silent = false;
+ static int futex_flag = 0;
+ 
+-struct timeval start, end, runtime;
++static struct timeval start, end, runtime;
+ static pthread_mutex_t thread_lock;
+ static unsigned int threads_starting;
+ static struct stats throughput_stats;
+diff --git a/tools/perf/bench/futex-lock-pi.c b/tools/perf/bench/futex-lock-pi.c
+index 08653ae8a8c4..10d908cd7bf7 100644
+--- a/tools/perf/bench/futex-lock-pi.c
++++ b/tools/perf/bench/futex-lock-pi.c
+@@ -34,7 +34,7 @@ static bool silent = false, multi = false;
+ static bool done = false, fshared = false;
+ static unsigned int ncpus, nthreads = 0;
+ static int futex_flag = 0;
+-struct timeval start, end, runtime;
++static struct timeval start, end, runtime;
+ static pthread_mutex_t thread_lock;
+ static unsigned int threads_starting;
+ static struct stats throughput_stats;
+-- 
+2.30.2
+

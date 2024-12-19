@@ -1,0 +1,39 @@
+From 069a231a74bf0dba87f5782a0bbc2b0d030d063a Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 30 Jul 2024 15:57:13 +0200
+Subject: [PATCH 21/22] fix dtc link error
+
+---
+ scripts/dtc/dtc-lexer.l             | 2 +-
+ scripts/dtc/dtc-lexer.lex.c_shipped | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/dtc/dtc-lexer.l b/scripts/dtc/dtc-lexer.l
+index fd825ebba69c..f57c9a7e83ac 100644
+--- a/scripts/dtc/dtc-lexer.l
++++ b/scripts/dtc/dtc-lexer.l
+@@ -38,7 +38,7 @@ LINECOMMENT	"//".*\n
+ #include "srcpos.h"
+ #include "dtc-parser.tab.h"
+ 
+-YYLTYPE yylloc;
++extern YYLTYPE yylloc;
+ extern bool treesource_error;
+ 
+ /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
+diff --git a/scripts/dtc/dtc-lexer.lex.c_shipped b/scripts/dtc/dtc-lexer.lex.c_shipped
+index 64c243772398..fa93d2398e05 100644
+--- a/scripts/dtc/dtc-lexer.lex.c_shipped
++++ b/scripts/dtc/dtc-lexer.lex.c_shipped
+@@ -631,7 +631,7 @@ char *yytext;
+ #include "srcpos.h"
+ #include "dtc-parser.tab.h"
+ 
+-YYLTYPE yylloc;
++extern YYLTYPE yylloc;
+ extern bool treesource_error;
+ 
+ /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
+-- 
+2.30.2
+
