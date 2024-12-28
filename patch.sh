@@ -414,19 +414,6 @@ post_rpibackports () {
 }
 
 backports () {
-	subsystem="uio"
-	#regenerate="enable"
-	if [ "x${regenerate}" = "xenable" ] ; then
-		unset backport_tag
-
-		cp -v ../patches/drivers/ti/uio/uio_pruss.c ./drivers/uio/
-
-		post_backports
-	else
-		patch_backports
-		dir 'drivers/ti/uio'
-	fi
-
 	backport_tag="v6.2"
 
 	subsystem="it66121"
@@ -508,6 +495,8 @@ drivers () {
 	dir 'drivers/it66121_drm_connector'
 	dir 'drivers/it66121_kernel_specific_fixes'
 	dir 'drivers/it66122'
+
+	dir 'drivers/ti/uio'
 
 	dir 'external/ti-amx3-cm3-pm-firmware'
 }
