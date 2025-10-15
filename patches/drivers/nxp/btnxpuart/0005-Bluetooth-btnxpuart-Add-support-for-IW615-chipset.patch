@@ -1,0 +1,57 @@
+From 249480d7ceb02806461832e3cdcc3e1122be4167 Mon Sep 17 00:00:00 2001
+From: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Date: Thu, 4 Jul 2024 18:50:58 +0530
+Subject: [PATCH 05/12] Bluetooth: btnxpuart: Add support for IW615 chipset
+
+This adds support for IW615 chipset with it's bootloader signature
+and firmware file.
+
+Signed-off-by: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit 016119e616451dfeada561443d1944d2bea6ad92)
+Signed-off-by: Luke Wang <ziniu.wang_1@nxp.com>
+---
+ drivers/bluetooth/btnxpuart.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/bluetooth/btnxpuart.c b/drivers/bluetooth/btnxpuart.c
+index 9aec1a32da03..02af75798f22 100644
+--- a/drivers/bluetooth/btnxpuart.c
++++ b/drivers/bluetooth/btnxpuart.c
+@@ -42,6 +42,8 @@
+ #define FIRMWARE_W9098_OLD	"uartuart9098_bt_v1.bin"
+ #define FIRMWARE_IW416		"uartiw416_bt_v0.bin"
+ #define FIRMWARE_IW612		"uartspi_n61x_v1.bin.se"
++#define FIRMWARE_IW615		"uartspi_iw610_v0.bin"
++#define FIRMWARE_SECURE_IW615	"uartspi_iw610_v0.bin.se"
+ #define FIRMWARE_IW624		"uartiw624_bt.bin"
+ #define FIRMWARE_SECURE_IW624	"uartiw624_bt.bin.se"
+ #define FIRMWARE_AW693		"uartaw693_bt.bin"
+@@ -57,6 +59,8 @@
+ #define CHIP_ID_IW624c		0x8001
+ #define CHIP_ID_AW693a0		0x8200
+ #define CHIP_ID_AW693a1		0x8201
++#define CHIP_ID_IW615a0		0x8800
++#define CHIP_ID_IW615a1		0x8801
+ 
+ #define FW_SECURE_MASK		0xc0
+ #define FW_OPEN			0x00
+@@ -942,6 +946,15 @@ static char *nxp_get_fw_name_from_chipid(struct hci_dev *hdev, u16 chipid,
+ 		else
+ 			bt_dev_err(hdev, "Illegal loader version %02x", loader_ver);
+ 		break;
++	case CHIP_ID_IW615a0:
++	case CHIP_ID_IW615a1:
++		if ((loader_ver & FW_SECURE_MASK) == FW_OPEN)
++			fw_name = FIRMWARE_IW615;
++		else if ((loader_ver & FW_SECURE_MASK) != FW_AUTH_ILLEGAL)
++			fw_name = FIRMWARE_SECURE_IW615;
++		else
++			bt_dev_err(hdev, "Illegal loader version %02x", loader_ver);
++		break;
+ 	default:
+ 		bt_dev_err(hdev, "Unknown chip signature %04x", chipid);
+ 		break;
+-- 
+2.30.2
+

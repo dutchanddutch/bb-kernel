@@ -1,0 +1,74 @@
+From a148142e1d414062836ae0317683ff4f167b58fd Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 15 Aug 2025 16:13:08 +0200
+Subject: [PATCH] pinctrl: add getters for state and state name
+
+---
+ drivers/pinctrl/core.c           | 20 ++++++++++++++++++++
+ include/linux/pinctrl/consumer.h | 12 ++++++++++++
+ 2 files changed, 32 insertions(+)
+
+diff --git a/drivers/pinctrl/core.c b/drivers/pinctrl/core.c
+index 7342148c6572..fd537bae24a6 100644
+--- a/drivers/pinctrl/core.c
++++ b/drivers/pinctrl/core.c
+@@ -1239,6 +1239,26 @@ struct pinctrl_state *pinctrl_lookup_state(struct pinctrl *p,
+ }
+ EXPORT_SYMBOL_GPL(pinctrl_lookup_state);
+ 
++/**
++ * pinctrl_state_get_name() - get name of a pinctrl state
++ * @state: the state handle
++ */
++const char *pinctrl_state_get_name(struct pinctrl_state *state)
++{
++	return state ? state->name : NULL;
++}
++EXPORT_SYMBOL_GPL(pinctrl_state_get_name);
++
++/**
++ * pinctrl_get_state() - get current pinctrl state
++ * @p: the pinctrl handle to retrieve the state from
++ */
++struct pinctrl_state *pinctrl_get_state(struct pinctrl *p)
++{
++	return p ? p->state : NULL;
++}
++EXPORT_SYMBOL_GPL(pinctrl_get_state);
++
+ static void pinctrl_link_add(struct pinctrl_dev *pctldev,
+ 			     struct device *consumer)
+ {
+diff --git a/include/linux/pinctrl/consumer.h b/include/linux/pinctrl/consumer.h
+index 4729d54e8995..54df469efe8b 100644
+--- a/include/linux/pinctrl/consumer.h
++++ b/include/linux/pinctrl/consumer.h
+@@ -37,6 +37,8 @@ extern void pinctrl_put(struct pinctrl *p);
+ extern struct pinctrl_state * __must_check pinctrl_lookup_state(struct pinctrl *p,
+ 								const char *name);
+ extern int pinctrl_select_state(struct pinctrl *p, struct pinctrl_state *s);
++extern struct pinctrl_state *pinctrl_get_state(struct pinctrl *p);
++extern const char *pinctrl_state_get_name(struct pinctrl_state *state);
+ 
+ extern struct pinctrl * __must_check devm_pinctrl_get(struct device *dev);
+ extern void devm_pinctrl_put(struct pinctrl *p);
+@@ -113,6 +115,16 @@ static inline int pinctrl_select_state(struct pinctrl *p,
+ 	return 0;
+ }
+ 
++static struct pinctrl_state *pinctrl_get_state(struct pinctrl *p)
++{
++	return NULL;
++}
++
++static const char *pinctrl_state_get_name(struct pinctrl_state *state)
++{
++	return NULL;
++}
++
+ static inline struct pinctrl * __must_check devm_pinctrl_get(struct device *dev)
+ {
+ 	return NULL;
+-- 
+2.39.5
+

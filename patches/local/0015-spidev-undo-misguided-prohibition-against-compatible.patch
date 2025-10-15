@@ -1,0 +1,24 @@
+From 5fde93a6dc428367e54b7cefc2980a31c926d64a Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Sat, 16 Aug 2025 10:01:19 +0200
+Subject: [PATCH] spidev: undo misguided prohibition against compatible="spidev"
+
+---
+ drivers/spi/spidev.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/spi/spidev.c b/drivers/spi/spidev.c
+index 16bb4fc3a4ba..4dbbc1102811 100644
+--- a/drivers/spi/spidev.c
++++ b/drivers/spi/spidev.c
+@@ -734,6 +734,7 @@ static int spidev_of_check(struct device *dev)
+ }
+ 
+ static const struct of_device_id spidev_dt_ids[] = {
++	{ .compatible = "spidev" },
+ 	{ .compatible = "cisco,spi-petra", .data = &spidev_of_check },
+ 	{ .compatible = "dh,dhcom-board", .data = &spidev_of_check },
+ 	{ .compatible = "elgin,jg10309-01", .data = &spidev_of_check },
+-- 
+2.39.5
+

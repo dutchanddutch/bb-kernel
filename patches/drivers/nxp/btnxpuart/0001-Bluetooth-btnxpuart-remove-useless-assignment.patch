@@ -1,0 +1,30 @@
+From 7196e9c40724aa72d1dffd44664d26379b73c08b Mon Sep 17 00:00:00 2001
+From: Francesco Dolcini <francesco.dolcini@toradex.com>
+Date: Mon, 11 Dec 2023 17:40:20 +0100
+Subject: [PATCH 01/12] Bluetooth: btnxpuart: remove useless assignment
+
+Remove useless assignment of rx_skb to NULL in case the skb is in error,
+this is already done in h4_recv_buf() that is executed a few lines
+before.
+
+Signed-off-by: Francesco Dolcini <francesco.dolcini@toradex.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+---
+ drivers/bluetooth/btnxpuart.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/bluetooth/btnxpuart.c b/drivers/bluetooth/btnxpuart.c
+index 5ee9a8b8dcfd..befb17401c42 100644
+--- a/drivers/bluetooth/btnxpuart.c
++++ b/drivers/bluetooth/btnxpuart.c
+@@ -1376,7 +1376,6 @@ static int btnxpuart_receive_buf(struct serdev_device *serdev, const u8 *data,
+ 		/* Safe to ignore out-of-sync bootloader signatures */
+ 		if (!is_fw_downloading(nxpdev))
+ 			bt_dev_err(nxpdev->hdev, "Frame reassembly failed (%d)", err);
+-		nxpdev->rx_skb = NULL;
+ 		return count;
+ 	}
+ 	if (!is_fw_downloading(nxpdev))
+-- 
+2.30.2
+

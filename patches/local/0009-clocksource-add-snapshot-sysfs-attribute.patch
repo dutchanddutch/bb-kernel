@@ -1,0 +1,64 @@
+From 59d9e1fa62cf3d24f4afc66f8c80182462c59c0b Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 14 Aug 2025 09:00:38 +0200
+Subject: [PATCH] clocksource: add snapshot sysfs attribute
+
+---
+ kernel/time/clocksource.c | 37 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/kernel/time/clocksource.c b/kernel/time/clocksource.c
+index 3130f24daf59..ad2beefed6c4 100644
+--- a/kernel/time/clocksource.c
++++ b/kernel/time/clocksource.c
+@@ -1459,10 +1459,47 @@ static ssize_t available_clocksource_show(struct device *dev,
+ }
+ static DEVICE_ATTR_RO(available_clocksource);
+ 
++/**
++ * snapshot_show - sysfs interface for getting system time snapshot
++ * @dev:	unused
++ * @attr:	unused
++ * @buf:	char buffer to be filled with snapshot info
++ *
++ * Provides sysfs interface for ktime_get_snapshot()
++ */
++static ssize_t snapshot_show(struct device *dev,
++			     struct device_attribute *attr,
++			     char *buf)
++{
++	struct system_time_snapshot snapshot;
++	ssize_t count = 0;
++
++	mutex_lock(&clocksource_mutex);
++	count = snprintf(buf, PAGE_SIZE, "clocksource=%s\n", curr_clocksource->name);
++	ktime_get_snapshot(&snapshot);
++	mutex_unlock(&clocksource_mutex);
++
++	count += snprintf(buf + count, max((ssize_t)PAGE_SIZE - count, (ssize_t)0),
++			"clocksource_changes=%u\n"
++			"clock_was_set=%u\n"
++			"cycles=%llu\n"
++			"real_time=%lld\n"
++			"raw_time=%lld\n",
++			snapshot.cs_was_changed_seq,
++			snapshot.clock_was_set_seq,
++			snapshot.cycles,
++			snapshot.real,
++			snapshot.raw );
++
++	return count;
++}
++static DEVICE_ATTR_RO(snapshot);
++
+ static struct attribute *clocksource_attrs[] = {
+ 	&dev_attr_current_clocksource.attr,
+ 	&dev_attr_unbind_clocksource.attr,
+ 	&dev_attr_available_clocksource.attr,
++	&dev_attr_snapshot.attr,
+ 	NULL
+ };
+ ATTRIBUTE_GROUPS(clocksource);
+-- 
+2.39.5
+

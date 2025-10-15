@@ -347,7 +347,7 @@ local_patch () {
 mainline_patches
 rt
 wireless_regdb
-beagleboard_dtbs
+#beagleboard_dtbs
 #local_patch
 
 pre_backports () {
@@ -490,11 +490,11 @@ backports () {
 }
 
 drivers () {
-	dir 'branding/boris'
+#	dir 'branding/boris'
 
-	dir 'drivers/it66121_drm_connector'
-	dir 'drivers/it66121_kernel_specific_fixes'
-	dir 'drivers/it66122'
+	#dir 'drivers/it66121_drm_connector'
+	#dir 'drivers/it66121_kernel_specific_fixes'
+	#dir 'drivers/it66122'
 
 	dir 'drivers/ti/uio'
 
@@ -502,7 +502,7 @@ drivers () {
 }
 
 ###
-backports
+#backports
 drivers
 
 packaging () {
@@ -511,5 +511,6 @@ packaging () {
 }
 
 packaging
+dir 'local'
 echo "patch.sh ran successfully"
 #

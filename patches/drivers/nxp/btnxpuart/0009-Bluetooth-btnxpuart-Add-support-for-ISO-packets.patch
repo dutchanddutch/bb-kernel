@@ -1,0 +1,39 @@
+From 47b6ef2ed52318f37ee7bb57f8a4497076cec049 Mon Sep 17 00:00:00 2001
+From: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Date: Fri, 16 Aug 2024 16:43:09 +0530
+Subject: [PATCH 09/12] Bluetooth: btnxpuart: Add support for ISO packets
+
+This enables btnxpuart driver to handle ISO RX packet when DUT is
+configured as audio sink.
+
+Tested IW612 on iMX8MMini platform and BlueZ-5.77 as follows:
+1) Configured DUT with bap_bcast_sink role in pipewire configuration file.
+2) Started pipewire and DUT is able to sync with Broadcast source through
+pipewire.
+3) ISO data RX is seen in btmon.
+4) Audio/Music is heard on audio jack.
+
+Signed-off-by: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Tested-by: Sarveshwar Bajaj <sarveshwar.bajaj@nxp.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit 33b25739acb9bc4b1edfd39d25487d2520c7986b)
+Signed-off-by: Luke Wang <ziniu.wang_1@nxp.com>
+---
+ drivers/bluetooth/btnxpuart.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/bluetooth/btnxpuart.c b/drivers/bluetooth/btnxpuart.c
+index 17750fbf03bf..1b6f9dd8de26 100644
+--- a/drivers/bluetooth/btnxpuart.c
++++ b/drivers/bluetooth/btnxpuart.c
+@@ -1412,6 +1412,7 @@ static const struct h4_recv_pkt nxp_recv_pkts[] = {
+ 	{ H4_RECV_ACL,          .recv = hci_recv_frame },
+ 	{ H4_RECV_SCO,          .recv = hci_recv_frame },
+ 	{ H4_RECV_EVENT,        .recv = hci_recv_frame },
++	{ H4_RECV_ISO,		.recv = hci_recv_frame },
+ 	{ NXP_RECV_CHIP_VER_V1, .recv = nxp_recv_chip_ver_v1 },
+ 	{ NXP_RECV_FW_REQ_V1,   .recv = nxp_recv_fw_req_v1 },
+ 	{ NXP_RECV_CHIP_VER_V3, .recv = nxp_recv_chip_ver_v3 },
+-- 
+2.30.2
+

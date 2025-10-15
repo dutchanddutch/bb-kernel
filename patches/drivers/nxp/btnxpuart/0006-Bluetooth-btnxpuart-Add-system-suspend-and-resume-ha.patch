@@ -1,0 +1,69 @@
+From af1831c7e884ccb31a23f39aa330462ee2606e17 Mon Sep 17 00:00:00 2001
+From: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Date: Fri, 5 Jul 2024 12:28:26 +0530
+Subject: [PATCH 06/12] Bluetooth: btnxpuart: Add system suspend and resume
+ handlers
+
+This adds handling for system suspend and resume. While the host enters
+suspend state, the driver will drive the chip into low power state.
+
+Similarly when system is resuming, the driver will wake up the chip.
+
+Signed-off-by: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit 8201755210373391f03b5eb14cb686b8f2fb4843)
+Signed-off-by: Luke Wang <ziniu.wang_1@nxp.com>
+---
+ drivers/bluetooth/btnxpuart.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/bluetooth/btnxpuart.c b/drivers/bluetooth/btnxpuart.c
+index 02af75798f22..589110f83e57 100644
+--- a/drivers/bluetooth/btnxpuart.c
++++ b/drivers/bluetooth/btnxpuart.c
+@@ -1538,6 +1538,24 @@ static void nxp_serdev_remove(struct serdev_device *serdev)
+ 	hci_free_dev(hdev);
+ }
+ 
++static int nxp_serdev_suspend(struct device *dev)
++{
++	struct btnxpuart_dev *nxpdev = dev_get_drvdata(dev);
++	struct ps_data *psdata = &nxpdev->psdata;
++
++	ps_control(psdata->hdev, PS_STATE_SLEEP);
++	return 0;
++}
++
++static int nxp_serdev_resume(struct device *dev)
++{
++	struct btnxpuart_dev *nxpdev = dev_get_drvdata(dev);
++	struct ps_data *psdata = &nxpdev->psdata;
++
++	ps_control(psdata->hdev, PS_STATE_AWAKE);
++	return 0;
++}
++
+ static struct btnxpuart_data w8987_data __maybe_unused = {
+ 	.helper_fw_name = NULL,
+ 	.fw_name = FIRMWARE_W8987,
+@@ -1557,12 +1575,17 @@ static const struct of_device_id nxpuart_of_match_table[] __maybe_unused = {
+ };
+ MODULE_DEVICE_TABLE(of, nxpuart_of_match_table);
+ 
++static const struct dev_pm_ops nxp_pm_ops = {
++	SET_SYSTEM_SLEEP_PM_OPS(nxp_serdev_suspend, nxp_serdev_resume)
++};
++
+ static struct serdev_device_driver nxp_serdev_driver = {
+ 	.probe = nxp_serdev_probe,
+ 	.remove = nxp_serdev_remove,
+ 	.driver = {
+ 		.name = "btnxpuart",
+ 		.of_match_table = of_match_ptr(nxpuart_of_match_table),
++		.pm = &nxp_pm_ops,
+ 	},
+ };
+ 
+-- 
+2.30.2
+

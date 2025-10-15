@@ -1,0 +1,38 @@
+From 446726f564eec23f92dc0fbbdf59520ec7cb70c5 Mon Sep 17 00:00:00 2001
+From: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Date: Fri, 16 Aug 2024 16:43:08 +0530
+Subject: [PATCH 08/12] Bluetooth: hci_h4: Add support for ISO packets in
+ h4_recv.h
+
+This adds ISO packet support in h4_recv.h, which was created before ISO
+packet handling was added to hci_h4.c and hci_uart.c
+
+Signed-off-by: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit 61b27cdf025bf47d3caf0f1ceab078b48774ba13)
+Signed-off-by: Luke Wang <ziniu.wang_1@nxp.com>
+---
+ drivers/bluetooth/h4_recv.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/bluetooth/h4_recv.h b/drivers/bluetooth/h4_recv.h
+index 4f2c89742245..647d37ca4cdd 100644
+--- a/drivers/bluetooth/h4_recv.h
++++ b/drivers/bluetooth/h4_recv.h
+@@ -38,6 +38,13 @@ struct h4_recv_pkt {
+ 	.lsize = 1, \
+ 	.maxlen = HCI_MAX_EVENT_SIZE
+ 
++#define H4_RECV_ISO \
++	.type = HCI_ISODATA_PKT, \
++	.hlen = HCI_ISO_HDR_SIZE, \
++	.loff = 2, \
++	.lsize = 2, \
++	.maxlen = HCI_MAX_FRAME_SIZE
++
+ static inline struct sk_buff *h4_recv_buf(struct hci_dev *hdev,
+ 					  struct sk_buff *skb,
+ 					  const unsigned char *buffer,
+-- 
+2.30.2
+

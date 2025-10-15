@@ -1,0 +1,42 @@
+From 653c651d6016f8477cb58d38ca573c8a047b732c Mon Sep 17 00:00:00 2001
+From: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Date: Wed, 10 Jul 2024 18:04:26 +0530
+Subject: [PATCH 07/12] Bluetooth: btnxpuart: Fix warnings for suspend and
+ resume functions
+
+This fixes the warnings 'nxp_serdev_resume' and 'nxp_serdev_suspend'
+defined but not used.
+
+Signed-off-by: Neeraj Sanjay Kale <neeraj.sanjaykale@nxp.com>
+Reported-by: kernel test robot <lkp@intel.com>
+Closes: https://lore.kernel.org/oe-kbuild-all/202407100518.06Xxq5PK-lkp@intel.com/
+Signed-off-by: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
+(cherry picked from commit a4c2c1b3e2afcdbff741df2784d86b148a087a48)
+Signed-off-by: Luke Wang <ziniu.wang_1@nxp.com>
+---
+ drivers/bluetooth/btnxpuart.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/bluetooth/btnxpuart.c b/drivers/bluetooth/btnxpuart.c
+index 589110f83e57..17750fbf03bf 100644
+--- a/drivers/bluetooth/btnxpuart.c
++++ b/drivers/bluetooth/btnxpuart.c
+@@ -1538,6 +1538,7 @@ static void nxp_serdev_remove(struct serdev_device *serdev)
+ 	hci_free_dev(hdev);
+ }
+ 
++#ifdef CONFIG_PM_SLEEP
+ static int nxp_serdev_suspend(struct device *dev)
+ {
+ 	struct btnxpuart_dev *nxpdev = dev_get_drvdata(dev);
+@@ -1555,6 +1556,7 @@ static int nxp_serdev_resume(struct device *dev)
+ 	ps_control(psdata->hdev, PS_STATE_AWAKE);
+ 	return 0;
+ }
++#endif
+ 
+ static struct btnxpuart_data w8987_data __maybe_unused = {
+ 	.helper_fw_name = NULL,
+-- 
+2.30.2
+
