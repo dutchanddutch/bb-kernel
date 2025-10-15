@@ -114,10 +114,12 @@ Missing patch command,
 }
 
 check_dpkg () {
-	LC_ALL=C dpkg-query -s ${pkg} 2>&1 | grep Section: > /dev/null || deb_pkgs="${deb_pkgs}${pkg} "
+	LC_ALL=C dpkg-query -s ${pkg}:${deb_arch} ${pkg}:all 2>&1 | grep Section: > /dev/null || deb_pkgs="${deb_pkgs}${pkg} "
 }
 
 debian_regs () {
+	deb_arch=$(LC_ALL=C dpkg --print-architecture)
+
 	unset deb_pkgs
 	pkg="bash"
 	check_dpkg
@@ -580,11 +582,9 @@ debian_regs () {
 	fi
 
 	if [ "$(which lsb_release)" ] && [ ! "${stop_pkg_search}" ] ; then
-		deb_arch=$(LC_ALL=C dpkg --print-architecture)
-
-		pkg="libncurses-dev:${deb_arch}"
+		pkg="libncurses-dev"
 		check_dpkg
-		pkg="libssl-dev:${deb_arch}"
+		pkg="libssl-dev"
 		check_dpkg
 	fi
 
