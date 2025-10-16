@@ -1,0 +1,255 @@
+From 75d382bd5bb4ddaea3a26d0ea5337fdd25888d8a Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 16 Oct 2025 06:51:55 +0200
+Subject: [PATCH] Add uio_pruss driver for am335x
+
+---
+ drivers/uio/Kconfig     |  10 ++
+ drivers/uio/Makefile    |   1 +
+ drivers/uio/uio_pruss.c | 201 ++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 212 insertions(+)
+ create mode 100644 drivers/uio/uio_pruss.c
+
+diff --git a/drivers/uio/Kconfig b/drivers/uio/Kconfig
+index b060dcd7c635..860e9e344141 100644
+--- a/drivers/uio/Kconfig
++++ b/drivers/uio/Kconfig
+@@ -125,6 +125,16 @@ config UIO_FSL_ELBC_GPCM_NETX5152
+ 	  Information about this hardware can be found at:
+ 	  http://www.hilscher.com/netx
+ 
++config UIO_PRUSS
++	tristate "Texas Instruments PRUSS driver"
++	select GENERIC_ALLOCATOR
++	depends on HAS_IOMEM && HAS_DMA
++	help
++	  Userspace I/O driver for PRUSS / PRU-ICSS on AM335x and later SoCs.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called uio_pruss.
++
+ config UIO_MF624
+ 	tristate "Humusoft MF624 DAQ PCI card driver"
+ 	depends on PCI
+diff --git a/drivers/uio/Makefile b/drivers/uio/Makefile
+index 1c5f3b5a95cf..f2f416a14228 100644
+--- a/drivers/uio/Makefile
++++ b/drivers/uio/Makefile
+@@ -7,6 +7,7 @@ obj-$(CONFIG_UIO_AEC)	+= uio_aec.o
+ obj-$(CONFIG_UIO_SERCOS3)	+= uio_sercos3.o
+ obj-$(CONFIG_UIO_PCI_GENERIC)	+= uio_pci_generic.o
+ obj-$(CONFIG_UIO_NETX)	+= uio_netx.o
++obj-$(CONFIG_UIO_PRUSS)         += uio_pruss.o
+ obj-$(CONFIG_UIO_MF624)         += uio_mf624.o
+ obj-$(CONFIG_UIO_FSL_ELBC_GPCM)	+= uio_fsl_elbc_gpcm.o
+ obj-$(CONFIG_UIO_HV_GENERIC)	+= uio_hv_generic.o
+diff --git a/drivers/uio/uio_pruss.c b/drivers/uio/uio_pruss.c
+new file mode 100644
+index 000000000000..7021f2dc2a65
+--- /dev/null
++++ b/drivers/uio/uio_pruss.c
+@@ -0,0 +1,201 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Programmable Real-Time Unit Sub System (PRUSS) UIO driver (uio_pruss)
++ *
++ * This driver exports PRUSS host event out interrupts and PRUSS, L3 RAM,
++ * and DDR RAM to user space for applications interacting with PRUSS firmware
++ *
++ * Copyright (C) 2010-11 Texas Instruments Incorporated - http://www.ti.com/
++ */
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/moduleparam.h>
++#include <linux/platform_device.h>
++#include <linux/uio_driver.h>
++#include <linux/io.h>
++#include <linux/clk.h>
++#include <linux/dma-mapping.h>
++#include <linux/sizes.h>
++#include <linux/slab.h>
++#include <linux/of.h>
++#include <linux/pm_runtime.h>
++#include <linux/bits.h>
++
++#define DRV_NAME "pruss_uio"
++#define DRV_VERSION "1.0"
++
++static uint extram_pool_sz = SZ_256K;
++module_param(extram_pool_sz, uint, 0644);
++MODULE_PARM_DESC(extram_pool_sz, "external ram pool size to allocate");
++
++/*
++ * Host event IRQ numbers from PRUSS - PRUSS can generate up to 8 interrupt
++ * events to AINTC of ARM host processor - which can be used for IPC b/w PRUSS
++ * firmware and user space application, async notification from PRU firmware
++ * to user space application
++ * 3	PRU_EVTOUT0
++ * 4	PRU_EVTOUT1
++ * 5	PRU_EVTOUT2
++ * 6	PRU_EVTOUT3
++ * 7	PRU_EVTOUT4
++ * 8	PRU_EVTOUT5
++ * 9	PRU_EVTOUT6
++ * 10	PRU_EVTOUT7
++*/
++#define MAX_PRUSS_EVT	8
++
++#define PINTC_HIDISR	0x0038
++#define PINTC_HIPIR	0x0900
++#define HIPIR_NOPEND	0x80000000
++#define PINTC_HIER	0x1500
++
++struct uio_pruss_dev {
++	struct uio_info info[MAX_PRUSS_EVT];
++
++	void __iomem *intc_base;
++
++	dma_addr_t ddr_paddr;
++	size_t ddr_size;
++	void *ddr_vaddr;
++};
++
++static inline u32 pruss_intc_read32(struct uio_pruss_dev *gdev, uint offset)
++{
++	return readl_relaxed(gdev->intc_base + offset);
++}
++
++static inline void pruss_intc_write32(struct uio_pruss_dev *gdev,
++					uint offset, u32 value)
++{
++	writel_relaxed(value, gdev->intc_base + offset);
++}
++
++static irqreturn_t pruss_irq_handler(int irq, struct uio_info *info)
++{
++	struct uio_pruss_dev *gdev = info->priv;
++	int index = 2 + (info - gdev->info);
++
++	if (!(pruss_intc_read32(gdev, PINTC_HIER) & BIT_MASK(index)))
++		return IRQ_NONE;  /* interrupt is disabled */
++
++	int event = pruss_intc_read32(gdev, PINTC_HIPIR + 4 * index);
++	if (event < 0)
++		return IRQ_NONE;  /* interrupt is not pending */
++
++	/* Disable interrupt */
++	pruss_intc_write32(gdev, PINTC_HIDISR, index);
++
++	return IRQ_HANDLED;
++}
++
++static void pruss_pm_disable(void *data)
++{
++	struct device *dev = data;
++	pm_runtime_put(dev);
++	pm_runtime_disable(dev);
++}
++
++static int pruss_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct uio_pruss_dev *gdev;
++	struct resource *pruss_res;
++	int ret;
++
++	gdev = devm_kzalloc(dev, sizeof(struct uio_pruss_dev), GFP_KERNEL);
++	if (!gdev)
++		return -ENOMEM;
++
++	pruss_res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "pruss");
++	if (!pruss_res) {
++		dev_err(dev, "pruss address range not defined\n");
++		return -EINVAL;
++	}
++
++	gdev->intc_base = devm_platform_ioremap_resource_byname(pdev, "intc");
++	if (IS_ERR(gdev->intc_base)) {
++		ret = PTR_ERR(gdev->intc_base);
++		dev_err(dev, "failed to map intc (error %d)\n", ret);
++		return ret;
++	}
++
++	gdev->ddr_size = extram_pool_sz;
++	if (gdev->ddr_size > 0) {
++		gdev->ddr_vaddr = dmam_alloc_coherent(dev, gdev->ddr_size,
++					&gdev->ddr_paddr, GFP_KERNEL | GFP_DMA);
++		if (!gdev->ddr_vaddr) {
++			dev_err(dev, "Failed to allocate external memory\n");
++			return -ENOMEM;
++		}
++	}
++
++	pm_runtime_enable(dev);
++	ret = pm_runtime_resume_and_get(dev);
++	if (ret < 0) {
++		dev_err(dev, "pm_runtime_resume_and_get() failed (error %d)\n",
++				ret);
++		pm_runtime_disable(dev);
++		return ret;
++	}
++	ret = devm_add_action_or_reset(dev, pruss_pm_disable, dev);
++	if (ret)
++		return ret;
++
++	/* create UIO device per irq line */
++	for (int i = 0; i < MAX_PRUSS_EVT; i++) {
++		struct uio_info *p = &gdev->info[i];
++
++		/* note: some userspace code uses hardcoded mem indices... */
++
++		p->mem[0].name = "pruss";
++		p->mem[0].addr = pruss_res->start;
++		p->mem[0].size = resource_size(pruss_res);;
++		p->mem[0].memtype = UIO_MEM_PHYS;
++
++		p->mem[1].name = "ddr";
++		p->mem[1].addr = gdev->ddr_paddr;
++		p->mem[1].size = gdev->ddr_size;
++		p->mem[1].memtype = UIO_MEM_PHYS;
++
++		p->name = devm_kasprintf(dev, GFP_KERNEL, "pruss_evt%d", i);
++		p->version = DRV_VERSION;
++
++		ret = platform_get_irq(pdev, i);
++		if (ret < 0) {
++			dev_err(dev, "Failed to obtain irq %d (%d)\n", i, ret);
++			return ret;
++		}
++		p->irq = ret;
++		p->handler = pruss_irq_handler;
++		p->priv = gdev;
++
++		ret = devm_uio_register_device(dev, p);
++		if (ret < 0)
++			return ret;
++	}
++
++	platform_set_drvdata(pdev, gdev);
++	return 0;
++}
++
++static const struct of_device_id pruss_dt_ids[] = {
++	{ .compatible = "ti,uio-pruss" },
++	{},
++};
++MODULE_DEVICE_TABLE(of, pruss_dt_ids);
++
++static struct platform_driver pruss_driver = {
++	.probe = pruss_probe,
++	.driver = {
++		   .name = DRV_NAME,
++		   .of_match_table = pruss_dt_ids,
++		   },
++};
++
++module_platform_driver(pruss_driver);
++
++MODULE_LICENSE("GPL v2");
++MODULE_VERSION(DRV_VERSION);
++MODULE_AUTHOR("Amit Chatterjee <amit.chatterjee@ti.com>");
++MODULE_AUTHOR("Pratheesh Gangadhar <pratheesh@ti.com>");
++MODULE_AUTHOR("Matthijs van Duin <matthijsvanduin@gmail.com>");
+-- 
+2.39.5
+
