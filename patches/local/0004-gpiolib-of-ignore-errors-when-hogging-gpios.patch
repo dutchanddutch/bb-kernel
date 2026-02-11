@@ -1,0 +1,31 @@
+From b4374a4ce7ce0574b70077adc2f4fee460d1512e Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Sun, 20 Jul 2025 19:41:35 +0200
+Subject: [PATCH 04/12] gpiolib: of: ignore errors when hogging gpios
+
+a single gpio hog failing shouldn't cause remaining hogs to be skipped,
+and certainly not cause probe failure of the entire gpio controller
+---
+ drivers/gpio/gpiolib-of.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpio/gpiolib-of.c b/drivers/gpio/gpiolib-of.c
+index 36f8c7bb79d8..a291e24709e8 100644
+--- a/drivers/gpio/gpiolib-of.c
++++ b/drivers/gpio/gpiolib-of.c
+@@ -849,10 +849,8 @@ static int of_gpiochip_scan_gpios(struct gpio_chip *chip)
+ 			continue;
+ 
+ 		ret = of_gpiochip_add_hog(chip, np);
+-		if (ret < 0)
+-			return ret;
+-
+-		of_node_set_flag(np, OF_POPULATED);
++		if (ret >= 0)
++			of_node_set_flag(np, OF_POPULATED);
+ 	}
+ 
+ 	return 0;
+-- 
+2.39.5
+

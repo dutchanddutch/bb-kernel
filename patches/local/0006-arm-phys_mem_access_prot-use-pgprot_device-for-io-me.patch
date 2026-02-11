@@ -1,0 +1,28 @@
+From ac111b6f3e6965e97ccb3310141ce4d204699cb4 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Mon, 11 Aug 2025 17:53:48 +0200
+Subject: [PATCH 06/12] arm: phys_mem_access_prot: use pgprot_device for io
+ memory
+
+this improves performance and ensures consistency with kernel mappings
+made with ioremap
+---
+ arch/arm/mm/mmu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/mm/mmu.c b/arch/arm/mm/mmu.c
+index f5b7a16c5803..9d172de5a955 100644
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -714,7 +714,7 @@ pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
+ 			      unsigned long size, pgprot_t vma_prot)
+ {
+ 	if (!pfn_valid(pfn))
+-		return pgprot_noncached(vma_prot);
++		return pgprot_device(vma_prot);
+ 	else if (file->f_flags & O_SYNC)
+ 		return pgprot_writecombine(vma_prot);
+ 	return vma_prot;
+-- 
+2.39.5
+

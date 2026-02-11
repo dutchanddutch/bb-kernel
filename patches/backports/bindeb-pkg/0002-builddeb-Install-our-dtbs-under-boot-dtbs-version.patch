@@ -5,17 +5,17 @@ Subject: [PATCH 2/2] builddeb: Install our dtbs under /boot/dtbs/$version
 
 Signed-off-by: Robert Nelson <robertcnelson@gmail.com>
 ---
- scripts/package/builddeb | 1 +
- 1 file changed, 1 insertion(+)
+ scripts/package/builddeb | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/scripts/package/builddeb b/scripts/package/builddeb
 index bf96a3c24608..c5e059d8e562 100755
 --- a/scripts/package/builddeb
 +++ b/scripts/package/builddeb
-@@ -45,6 +45,7 @@ install_linux_image () {
+@@ -45,6 +45,6 @@ install_linux_image () {
  	# Only some architectures with OF support have this target
  	if is_enabled CONFIG_OF_EARLY_FLATTREE && [ -d "${srctree}/arch/${SRCARCH}/boot/dts" ]; then
- 		${MAKE} -f ${srctree}/Makefile INSTALL_DTBS_PATH="${pdir}/usr/lib/linux-image-${KERNELRELEASE}" dtbs_install
+-		${MAKE} -f ${srctree}/Makefile INSTALL_DTBS_PATH="${pdir}/usr/lib/linux-image-${KERNELRELEASE}" dtbs_install
 +		${MAKE} -f ${srctree}/Makefile INSTALL_DTBS_PATH="${pdir}/boot/dtbs/${KERNELRELEASE}" dtbs_install
  	fi
  

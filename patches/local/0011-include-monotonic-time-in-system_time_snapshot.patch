@@ -1,0 +1,93 @@
+From a398739fe8301e7476c4acde8572eb358d8629a8 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 21 Aug 2025 09:08:24 +0200
+Subject: [PATCH 11/12] include monotonic time in system_time_snapshot
+
+---
+ include/linux/timekeeping.h |  4 +++-
+ kernel/time/clocksource.c   |  2 ++
+ kernel/time/timekeeping.c   | 12 +++++++-----
+ 3 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/include/linux/timekeeping.h b/include/linux/timekeeping.h
+index fc12a9ba2c88..07a9e0fa6001 100644
+--- a/include/linux/timekeeping.h
++++ b/include/linux/timekeeping.h
+@@ -271,9 +271,10 @@ struct ktime_timestamps {
+ };
+ 
+ /**
+- * struct system_time_snapshot - simultaneous raw/real time capture with
++ * struct system_time_snapshot - simultaneous raw/mono/real time capture with
+  *				 counter value
+  * @cycles:	Clocksource counter value to produce the system times
++ * @mono:	Monotonic system time
+  * @real:	Realtime system time
+  * @raw:	Monotonic raw system time
+  * @cs_id:	Clocksource ID
+@@ -282,6 +283,7 @@ struct ktime_timestamps {
+  */
+ struct system_time_snapshot {
+ 	u64			cycles;
++	ktime_t			mono;
+ 	ktime_t			real;
+ 	ktime_t			raw;
+ 	enum clocksource_ids	cs_id;
+diff --git a/kernel/time/clocksource.c b/kernel/time/clocksource.c
+index a01c998da3f6..38f1d1deedac 100644
+--- a/kernel/time/clocksource.c
++++ b/kernel/time/clocksource.c
+@@ -1511,11 +1511,13 @@ static ssize_t snapshot_show(struct device *dev,
+ 			"clocksource_changes=%u\n"
+ 			"clock_was_set=%u\n"
+ 			"cycles=%llu\n"
++			"mono_time=%lld\n"
+ 			"real_time=%lld\n"
+ 			"raw_time=%lld\n",
+ 			snapshot.cs_was_changed_seq,
+ 			snapshot.clock_was_set_seq,
+ 			snapshot.cycles,
++			snapshot.mono,
+ 			snapshot.real,
+ 			snapshot.raw );
+ 
+diff --git a/kernel/time/timekeeping.c b/kernel/time/timekeeping.c
+index e3896b2be453..3132a30b302e 100644
+--- a/kernel/time/timekeeping.c
++++ b/kernel/time/timekeeping.c
+@@ -961,9 +961,10 @@ void ktime_get_snapshot(struct system_time_snapshot *systime_snapshot)
+ 	struct timekeeper *tk = &tk_core.timekeeper;
+ 	unsigned int seq;
+ 	ktime_t base_raw;
++	ktime_t base_mono;
+ 	ktime_t base_real;
+ 	u64 nsec_raw;
+-	u64 nsec_real;
++	u64 nsec_mono;
+ 	u64 now;
+ 
+ 	WARN_ON_ONCE(timekeeping_suspended);
+@@ -974,15 +975,16 @@ void ktime_get_snapshot(struct system_time_snapshot *systime_snapshot)
+ 		systime_snapshot->cs_id = tk->tkr_mono.clock->id;
+ 		systime_snapshot->cs_was_changed_seq = tk->cs_was_changed_seq;
+ 		systime_snapshot->clock_was_set_seq = tk->clock_was_set_seq;
+-		base_real = ktime_add(tk->tkr_mono.base,
+-				      tk_core.timekeeper.offs_real);
++		base_mono = tk->tkr_mono.base;
++		base_real = ktime_add(base_mono, tk_core.timekeeper.offs_real);
+ 		base_raw = tk->tkr_raw.base;
+-		nsec_real = timekeeping_cycles_to_ns(&tk->tkr_mono, now);
++		nsec_mono = timekeeping_cycles_to_ns(&tk->tkr_mono, now);
+ 		nsec_raw  = timekeeping_cycles_to_ns(&tk->tkr_raw, now);
+ 	} while (read_seqcount_retry(&tk_core.seq, seq));
+ 
+ 	systime_snapshot->cycles = now;
+-	systime_snapshot->real = ktime_add_ns(base_real, nsec_real);
++	systime_snapshot->mono = ktime_add_ns(base_mono, nsec_mono);
++	systime_snapshot->real = ktime_add_ns(base_real, nsec_mono);
+ 	systime_snapshot->raw = ktime_add_ns(base_raw, nsec_raw);
+ }
+ EXPORT_SYMBOL_GPL(ktime_get_snapshot);
+-- 
+2.39.5
+

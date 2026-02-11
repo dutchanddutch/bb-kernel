@@ -1,0 +1,107 @@
+From 359f3a9d0f9140e4051719d514725cfb7905b232 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 28 Sep 2017 08:46:45 -0500
+Subject: [PATCH 03/12] gpio sysfs improvements
+
+- Make the 'direction' attribute read-only if changing direction is not
+  permitted, instead of deleting it entirely.
+- Make 'value' attribute read-only when gpio is input-only.
+- Add 'label' attribute'.
+---
+ drivers/gpio/gpiolib-sysfs.c | 30 +++++++++++++++++++++++++++---
+ 1 file changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpio/gpiolib-sysfs.c b/drivers/gpio/gpiolib-sysfs.c
+index 17ed229412af..463ca5e5582a 100644
+--- a/drivers/gpio/gpiolib-sysfs.c
++++ b/drivers/gpio/gpiolib-sysfs.c
+@@ -52,10 +52,10 @@ static DEFINE_MUTEX(sysfs_lock);
+ /*
+  * /sys/class/gpio/gpioN... only for GPIOs that are exported
+  *   /direction
+- *      * MAY BE OMITTED if kernel won't allow direction changes
+  *      * is read/write as "in" or "out"
+  *      * may also be written as "high" or "low", initializing
+  *        output value as specified ("out" implies "low")
++ *      * read-only if kernel won't allow direction changes
+  *   /value
+  *      * always readable, subject to hardware behavior
+  *      * may be writable, as zero/nonzero
+@@ -68,6 +68,8 @@ static DEFINE_MUTEX(sysfs_lock);
+  *      * is read/write as zero/nonzero
+  *      * also affects existing and subsequent "falling" and "rising"
+  *        /edge configuration
++ *   /label
++ *      * descriptor label
+  */
+ 
+ static ssize_t direction_show(struct device *dev,
+@@ -96,7 +98,9 @@ static ssize_t direction_store(struct device *dev,
+ 
+ 	mutex_lock(&data->mutex);
+ 
+-	if (sysfs_streq(buf, "high"))
++	if (!data->direction_can_change)
++		status = -EPERM;
++	else if (sysfs_streq(buf, "high"))
+ 		status = gpiod_direction_output_raw(desc, 1);
+ 	else if (sysfs_streq(buf, "out") || sysfs_streq(buf, "low"))
+ 		status = gpiod_direction_output_raw(desc, 0);
+@@ -360,6 +364,18 @@ static ssize_t active_low_store(struct device *dev,
+ }
+ static DEVICE_ATTR_RW(active_low);
+ 
++static ssize_t label_show(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct gpiod_data *data = dev_get_drvdata(dev);
++	struct gpio_desc *desc = data->desc;
++
++	guard(srcu)(&desc->gdev->desc_srcu);
++
++	return sysfs_emit(buf, "%s\n", gpiod_get_label(desc));
++}
++static DEVICE_ATTR_RO(label);
++
+ static umode_t gpio_is_visible(struct kobject *kobj, struct attribute *attr,
+ 			       int n)
+ {
+@@ -371,12 +387,15 @@ static umode_t gpio_is_visible(struct kobject *kobj, struct attribute *attr,
+ 
+ 	if (attr == &dev_attr_direction.attr) {
+ 		if (!show_direction)
+-			mode = 0;
++			mode &= 0444;
+ 	} else if (attr == &dev_attr_edge.attr) {
+ 		if (gpiod_to_irq(desc) < 0)
+ 			mode = 0;
+ 		if (!show_direction && test_bit(FLAG_IS_OUT, &desc->flags))
+ 			mode = 0;
++	} else if (attr == &dev_attr_value.attr) {
++		if (!show_direction && !test_bit(FLAG_IS_OUT, &desc->flags))
++			mode &= 0444;
+ 	}
+ 
+ 	return mode;
+@@ -387,6 +406,7 @@ static struct attribute *gpio_attrs[] = {
+ 	&dev_attr_edge.attr,
+ 	&dev_attr_value.attr,
+ 	&dev_attr_active_low.attr,
++	&dev_attr_label.attr,
+ 	NULL,
+ };
+ 
+@@ -400,6 +420,10 @@ static const struct attribute_group *gpio_groups[] = {
+ 	NULL
+ };
+ 
++/* bwlegh, a second device in the same file... get out of my namespace! */
++#define dev_attr_label dev_attr_chip_label
++#define label_show chip_label_show
++
+ /*
+  * /sys/class/gpio/gpiochipN/
+  *   /base ... matching gpio_chip.base (N)
+-- 
+2.39.5
+

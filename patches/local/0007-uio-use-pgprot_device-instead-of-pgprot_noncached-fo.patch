@@ -1,0 +1,28 @@
+From 32655339da9a138883743bae0a302441f138ea3f Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Mon, 11 Aug 2025 18:12:15 +0200
+Subject: [PATCH 07/12] uio: use pgprot_device instead of pgprot_noncached for
+ io memory
+
+on arm this improves performance and ensures consistency with kernel
+mappings made with ioremap
+---
+ drivers/uio/uio.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/uio/uio.c b/drivers/uio/uio.c
+index 004a549c6c7d..db3e6de13367 100644
+--- a/drivers/uio/uio.c
++++ b/drivers/uio/uio.c
+@@ -756,7 +756,7 @@ static int uio_mmap_physical(struct vm_area_struct *vma)
+ 
+ 	vma->vm_ops = &uio_physical_vm_ops;
+ 	if (idev->info->mem[mi].memtype == UIO_MEM_PHYS)
+-		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++		vma->vm_page_prot = pgprot_device(vma->vm_page_prot);
+ 
+ 	/*
+ 	 * We cannot use the vm_iomap_memory() helper here,
+-- 
+2.39.5
+

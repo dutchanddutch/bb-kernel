@@ -418,7 +418,7 @@ local_patch () {
 mainline_patches
 rt
 wireless_regdb
-beagleboard_dtbs
+#beagleboard_dtbs
 #local_patch
 
 pre_backports () {
@@ -504,6 +504,8 @@ backports () {
 		patch_backports
 	fi
 
+	return
+
 	backport_tag="v6.13.12"
 
 	subsystem="it66121"
@@ -536,15 +538,17 @@ backports () {
 }
 
 drivers () {
-	dir 'branding/boris'
+	#dir 'branding/boris'
 
-	dir 'drivers/it66121_drm_connector'
-	dir 'drivers/it66122'
+	#dir 'drivers/it66121_drm_connector'
+	#dir 'drivers/it66122'
 
 	dir 'drivers/wkup_m3_ipc'
 	dir 'external/ti-amx3-cm3-pm-firmware'
 
 	dir 'drivers/uio'
+
+	dir 'drivers/btnxpuart'
 }
 
 ###
@@ -557,5 +561,6 @@ packaging () {
 }
 
 packaging
+dir 'local'
 echo "patch.sh ran successfully"
 #

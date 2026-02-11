@@ -1,0 +1,31 @@
+From 5711588db3a5962b8af85f23ff638178385bff0b Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 16 Oct 2025 11:06:42 +0200
+Subject: [PATCH] log resource conflicts
+
+---
+ kernel/resource.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/kernel/resource.c b/kernel/resource.c
+index 1d48ae864635..4324d2d4ca1f 100644
+--- a/kernel/resource.c
++++ b/kernel/resource.c
+@@ -1279,6 +1279,14 @@ static int __request_region_locked(struct resource *res, struct resource *parent
+ 				continue;
+ 			}
+ 		}
++		pr_info( "conflict in __request_region_locked():\n"
++			"    parent   = { 0x%08x-0x%08x, \"%s\", 0x%lx, 0x%lx }\n"
++			"    res      = { 0x%08x-0x%08x, \"%s\", 0x%lx, 0x%lx }\n"
++			"    conflict = { 0x%08x-0x%08x, \"%s\", 0x%lx, 0x%lx }\n",
++			parent->start, parent->end, parent->name, parent->flags, parent->desc,
++			res->start, res->end, res->name, res->flags, res->desc,
++			conflict->start, conflict->end, conflict->name, conflict->flags, conflict->desc
++		);
+ 		if (conflict->flags & flags & IORESOURCE_MUXED) {
+ 			add_wait_queue(&muxed_resource_wait, &wait);
+ 			write_unlock(&resource_lock);
+-- 
+2.39.5
+

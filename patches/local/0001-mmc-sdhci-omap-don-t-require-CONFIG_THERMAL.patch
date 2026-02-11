@@ -1,0 +1,25 @@
+From 973e1a4e821ab27dd71765c45b2d704618a4c8c9 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Thu, 16 Oct 2025 00:34:57 +0200
+Subject: [PATCH] mmc: sdhci-omap: don't require CONFIG_THERMAL
+
+it is not relevant on all SoCs that use this driver
+---
+ drivers/mmc/host/Kconfig | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/mmc/host/Kconfig b/drivers/mmc/host/Kconfig
+index 7199cb0bd0b9..d75f7c1f9208 100644
+--- a/drivers/mmc/host/Kconfig
++++ b/drivers/mmc/host/Kconfig
+@@ -1050,7 +1050,6 @@ config MMC_SDHCI_OMAP
+ 	tristate "TI SDHCI Controller Support"
+ 	depends on ARCH_OMAP2PLUS || ARCH_KEYSTONE || COMPILE_TEST
+ 	depends on MMC_SDHCI_PLTFM && OF
+-	select THERMAL
+ 	imply TI_SOC_THERMAL
+ 	select MMC_SDHCI_EXTERNAL_DMA if DMA_ENGINE
+ 	help
+-- 
+2.39.5
+

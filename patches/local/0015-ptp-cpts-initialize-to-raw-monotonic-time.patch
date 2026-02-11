@@ -1,0 +1,25 @@
+From 41db0860db4ebc94a41acea7f4796cd015a69b8e Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Fri, 15 Aug 2025 11:17:49 +0200
+Subject: [PATCH 15/16] ptp: cpts: initialize to raw monotonic time
+
+---
+ drivers/net/ethernet/ti/cpts.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/ti/cpts.c b/drivers/net/ethernet/ti/cpts.c
+index dbbea9146040..c1b125d35542 100644
+--- a/drivers/net/ethernet/ti/cpts.c
++++ b/drivers/net/ethernet/ti/cpts.c
+@@ -563,7 +563,7 @@ int cpts_register(struct cpts *cpts)
+ 	cpts_write32(cpts, CPTS_EN, control);
+ 	cpts_write32(cpts, TS_PEND_EN, int_enable);
+ 
+-	timecounter_init(&cpts->tc, &cpts->cc, ktime_get_real_ns());
++	timecounter_init(&cpts->tc, &cpts->cc, ktime_get_raw_ns());
+ 
+ 	cpts->clock = ptp_clock_register(&cpts->info, cpts->dev);
+ 	if (IS_ERR(cpts->clock)) {
+-- 
+2.39.5
+

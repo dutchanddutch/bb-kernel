@@ -1,0 +1,118 @@
+From 54eb9ab6c389ffd3aaf0ac72354f08d9e4b2da43 Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Mon, 13 Jan 2025 14:27:58 +0100
+Subject: [PATCH 05/12] gpiolib: of: support exporting hogged gpios to
+ userspace via sysfs
+
+This is a replacement for gpio-of-helper.
+---
+ .../devicetree/bindings/gpio/gpio.txt         |  4 ++++
+ drivers/gpio/gpiolib-of.c                     | 21 +++++++++++++++++++
+ drivers/gpio/gpiolib-of.h                     |  2 ++
+ drivers/gpio/gpiolib.c                        |  2 ++
+ 4 files changed, 29 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/gpio/gpio.txt b/Documentation/devicetree/bindings/gpio/gpio.txt
+index d82c32217fff..f96154eb7ab1 100644
+--- a/Documentation/devicetree/bindings/gpio/gpio.txt
++++ b/Documentation/devicetree/bindings/gpio/gpio.txt
+@@ -221,6 +221,10 @@ configuration.
+ 
+ Optional properties:
+ - line-name:  The GPIO label name. If not present the node name is used.
++- export:     If present then the GPIO is exported to userspace via sysfs,
++              Userspace is prohibited from changing the GPIO direction unless
++              the 'bidirectional' property is also present.
++- bidirectional: see 'export'.
+ 
+ Example of two SOC GPIO banks defined as gpio-controller nodes:
+ 
+diff --git a/drivers/gpio/gpiolib-of.c b/drivers/gpio/gpiolib-of.c
+index a291e24709e8..2faddd6b1dc1 100644
+--- a/drivers/gpio/gpiolib-of.c
++++ b/drivers/gpio/gpiolib-of.c
+@@ -812,6 +812,12 @@ static int of_gpiochip_add_hog(struct gpio_chip *chip, struct device_node *hog)
+ 	const char *name;
+ 	unsigned int i;
+ 	int ret;
++	int export_mode = -1;
++
++	if (of_property_read_bool(hog, "export"))
++		export_mode = of_property_read_bool(hog, "bidirectional");
++
++	pr_debug("add gpio hog %pOFn (export_mode=%d)\n", hog, export_mode);
+ 
+ 	for (i = 0;; i++) {
+ 		desc = of_parse_own_gpio(hog, chip, i, &name, &lflags, &dflags);
+@@ -825,6 +831,14 @@ static int of_gpiochip_add_hog(struct gpio_chip *chip, struct device_node *hog)
+ #ifdef CONFIG_OF_DYNAMIC
+ 		WRITE_ONCE(desc->hog, hog);
+ #endif
++
++		if (export_mode >= 0) {
++			ret = gpiod_export(desc, export_mode);
++			if (ret < 0) {
++				pr_err("GPIO \"%s\" (%pOFn): gpiod_export failed with error %d\n",
++					name, hog, ret);
++			}
++		}
+ 	}
+ 
+ 	return 0;
+@@ -1185,13 +1199,20 @@ int of_gpiochip_add(struct gpio_chip *chip)
+ 
+ 	of_node_get(np);
+ 
++#if 0
+ 	ret = of_gpiochip_scan_gpios(chip);
+ 	if (ret)
+ 		of_node_put(np);
++#endif
+ 
+ 	return ret;
+ }
+ 
++void of_gpiochip_setup(struct gpio_chip *chip)
++{
++	of_gpiochip_scan_gpios(chip);
++}
++
+ void of_gpiochip_remove(struct gpio_chip *chip)
+ {
+ 	of_node_put(dev_of_node(&chip->gpiodev->dev));
+diff --git a/drivers/gpio/gpiolib-of.h b/drivers/gpio/gpiolib-of.h
+index 16d6ac8cb156..28491fc100e7 100644
+--- a/drivers/gpio/gpiolib-of.h
++++ b/drivers/gpio/gpiolib-of.h
+@@ -22,6 +22,7 @@ struct gpio_desc *of_find_gpio(struct device_node *np,
+ 			       unsigned long *lookupflags);
+ int of_gpiochip_add(struct gpio_chip *gc);
+ void of_gpiochip_remove(struct gpio_chip *gc);
++void of_gpiochip_setup(struct gpio_chip *gc);
+ int of_gpio_count(const struct fwnode_handle *fwnode, const char *con_id);
+ #else
+ static inline struct gpio_desc *of_find_gpio(struct device_node *np,
+@@ -33,6 +34,7 @@ static inline struct gpio_desc *of_find_gpio(struct device_node *np,
+ }
+ static inline int of_gpiochip_add(struct gpio_chip *gc) { return 0; }
+ static inline void of_gpiochip_remove(struct gpio_chip *gc) { }
++static inline void of_gpiochip_setup(struct gpio_chip *gc) { }
+ static inline int of_gpio_count(const struct fwnode_handle *fwnode,
+ 				const char *con_id)
+ {
+diff --git a/drivers/gpio/gpiolib.c b/drivers/gpio/gpiolib.c
+index 209871c219d6..6fe7ee31a652 100644
+--- a/drivers/gpio/gpiolib.c
++++ b/drivers/gpio/gpiolib.c
+@@ -810,6 +810,8 @@ static int gpiochip_setup_dev(struct gpio_device *gdev)
+ 	dev_dbg(&gdev->dev, "registered GPIOs %u to %u on %s\n", gdev->base,
+ 		gdev->base + gdev->ngpio - 1, gdev->label);
+ 
++	of_gpiochip_setup(gdev->chip);
++
+ 	return 0;
+ 
+ err_remove_device:
+-- 
+2.39.5
+

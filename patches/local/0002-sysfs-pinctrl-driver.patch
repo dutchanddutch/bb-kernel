@@ -1,0 +1,207 @@
+From f3c47e57e01460c8c13a914be931ac69c3557afc Mon Sep 17 00:00:00 2001
+From: Matthijs van Duin <matthijsvanduin@gmail.com>
+Date: Tue, 14 Jan 2025 03:04:05 +0100
+Subject: [PATCH 02/12] sysfs-pinctrl driver
+
+---
+ drivers/pinctrl/Kconfig         |   7 ++
+ drivers/pinctrl/Makefile        |   1 +
+ drivers/pinctrl/sysfs-pinctrl.c | 156 ++++++++++++++++++++++++++++++++
+ 3 files changed, 164 insertions(+)
+ create mode 100644 drivers/pinctrl/sysfs-pinctrl.c
+
+diff --git a/drivers/pinctrl/Kconfig b/drivers/pinctrl/Kconfig
+index e05174e5efbc..bfc2b2743036 100644
+--- a/drivers/pinctrl/Kconfig
++++ b/drivers/pinctrl/Kconfig
+@@ -31,6 +31,13 @@ config DEBUG_PINCTRL
+ 	help
+ 	  Say Y here to add some extra checks and diagnostics to PINCTRL calls.
+ 
++config SYSFS_PINCTRL
++	tristate ""
++	depends on OF
++	help
++	  Allows creating virtual devices whose pinctrl state can be configured
++	  from userspace via sysfs.
++
+ config PINCTRL_AMD
+ 	bool "AMD GPIO pin control"
+ 	depends on HAS_IOMEM
+diff --git a/drivers/pinctrl/Makefile b/drivers/pinctrl/Makefile
+index 97823f52b972..eb77b0f5a6d8 100644
+--- a/drivers/pinctrl/Makefile
++++ b/drivers/pinctrl/Makefile
+@@ -8,6 +8,7 @@ obj-$(CONFIG_PINMUX)		+= pinmux.o
+ obj-$(CONFIG_PINCONF)		+= pinconf.o
+ obj-$(CONFIG_GENERIC_PINCONF)	+= pinconf-generic.o
+ obj-$(CONFIG_OF)		+= devicetree.o
++obj-$(CONFIG_SYSFS_PINCTRL)	+= sysfs-pinctrl.o
+ 
+ obj-$(CONFIG_PINCTRL_AMD)	+= pinctrl-amd.o
+ obj-$(CONFIG_PINCTRL_APPLE_GPIO) += pinctrl-apple-gpio.o
+diff --git a/drivers/pinctrl/sysfs-pinctrl.c b/drivers/pinctrl/sysfs-pinctrl.c
+new file mode 100644
+index 000000000000..af922d3fadc6
+--- /dev/null
++++ b/drivers/pinctrl/sysfs-pinctrl.c
+@@ -0,0 +1,156 @@
++/*
++ * virtual device for sysfs-controllable pinctrl
++ *
++ * Copyright (C) 2025 Matthijs van Duin <matthijsvanduin@gmail.com>
++ * loosely based on bone-pinmux-helper, which is:
++ * Copyright (C) 2013 Pantelis Antoniou <panto@antoniou-consulting.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#include <linux/platform_device.h>
++#include <linux/module.h>
++#include <linux/kernel.h>
++#include <linux/errno.h>
++#include <linux/init.h>
++#include <linux/err.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++#include <linux/slab.h>
++#include <linux/string.h>
++#include <linux/pinctrl/consumer.h>
++#include <linux/pinctrl/devinfo.h>
++#include "core.h"
++
++static ssize_t
++append_line(char *buf, ssize_t offset, const char *s)
++{
++	BUG_ON(offset < 0);
++	ssize_t len = strscpy(buf + offset, s, PAGE_SIZE - 1 - offset);
++	if (len >= 0) {
++		len += offset;  // now guaranteed to be < PAGE_SIZE - 1
++		buf[len++] = '\n';
++		buf[len] = 0;
++	}
++	return len;
++}
++
++static ssize_t
++available_states_show(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct pinctrl *p = dev->pins->p;
++	struct pinctrl_state *state;
++	ssize_t ret = 0;
++
++	list_for_each_entry(state, &p->states, node) {
++		ret = append_line(buf, ret, state->name);
++		if (ret < 0)
++			break;
++	}
++
++	return ret;
++}
++
++static ssize_t
++state_show(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct pinctrl *p = dev->pins->p;
++	ssize_t ret = 0;
++
++	if (p->state)
++		ret = append_line(buf, ret, p->state->name);
++
++	return ret;
++}
++
++static struct pinctrl_state *
++sysfs_pinctrl_lookup_state(struct pinctrl *p, const char *name)
++{
++	struct pinctrl_state *state;
++
++	list_for_each_entry(state, &p->states, node) {
++		if (sysfs_streq(state->name, name))
++			return state;
++	}
++
++	return NULL;
++}
++
++static ssize_t
++state_store(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t len)
++{
++	struct pinctrl *p = dev->pins->p;
++	struct pinctrl_state *state = sysfs_pinctrl_lookup_state(p, buf);
++	if (!state) {
++		dev_err(dev, "pinctrl state not found\n");
++		return -ENODEV;
++	}
++
++	int ret = pinctrl_select_state(p, state);
++	if (ret < 0) {
++		dev_err(dev, "select pinctrl state \"%s\": error %d\n",
++				state->name, ret);
++		return ret;
++	}
++
++	return len;
++}
++
++static DEVICE_ATTR_RO(available_states);
++static DEVICE_ATTR_RW(state);
++
++static struct attribute *sysfs_pinctrl_attrs[] = {
++	&dev_attr_available_states.attr,
++	&dev_attr_state.attr,
++	NULL
++};
++ATTRIBUTE_GROUPS(sysfs_pinctrl);
++
++static int sysfs_pinctrl_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	if (!dev->pins || !dev->pins->p) {
++		dev_err(dev, "No pinctrl available\n");
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static const struct of_device_id sysfs_pinctrl_of_match[] = {
++	{ .compatible = "sysfs-pinctrl" },
++	{ .compatible = "bone-pinmux-helper" },  // compat
++	{},
++};
++MODULE_DEVICE_TABLE(of, sysfs_pinctrl_of_match);
++
++static struct platform_driver sysfs_pinctrl_driver = {
++	.probe		= sysfs_pinctrl_probe,
++	.driver = {
++		.name		= "sysfs-pinctrl",
++		.owner		= THIS_MODULE,
++		.of_match_table	= sysfs_pinctrl_of_match,
++		.dev_groups	= sysfs_pinctrl_groups,
++	},
++};
++
++module_platform_driver(sysfs_pinctrl_driver);
++
++MODULE_AUTHOR("Matthijs van Duin <matthijsvanduin@gmail.com>");
++MODULE_DESCRIPTION("sysfs-controllable pinctrl");
++MODULE_LICENSE("GPL");
+-- 
+2.39.5
+
