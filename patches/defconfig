@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm 6.12.49 Kernel Configuration
+# Linux/arm 6.12.70 Kernel Configuration
 #
 CONFIG_CC_VERSION_TEXT="arm-linux-gnueabi-gcc (GCC) 14.3.0"
 CONFIG_CC_IS_GCC=y
@@ -3123,6 +3123,14 @@ CONFIG_LEDS_PWM=m
 #
 # Flash and Torch LED drivers
 #
+# CONFIG_LEDS_AAT1290 is not set
+# CONFIG_LEDS_AS3645A is not set
+# CONFIG_LEDS_KTD2692 is not set
+# CONFIG_LEDS_LM3601X is not set
+# CONFIG_LEDS_RT4505 is not set
+# CONFIG_LEDS_RT8515 is not set
+# CONFIG_LEDS_SGM3140 is not set
+# CONFIG_LEDS_SY7802 is not set
 
 #
 # RGB LED drivers
